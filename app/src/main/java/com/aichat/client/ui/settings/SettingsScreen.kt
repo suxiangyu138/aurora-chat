@@ -23,6 +23,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,7 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -52,8 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aichat.client.data.settings.ModelConfig
+import com.aichat.client.data.settings.ModelPresets
 
-/** 设置页:多套模型配置管理 + 参数调节 + 测试连接 */
+/** 设置页:多套模型配置管理 + 数值参数输入 + 预设模板 + 测试连接 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -66,6 +69,7 @@ fun SettingsScreen(
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
     var apiKeyVisible by remember { mutableStateOf(false) }
+    var presetMenuOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.loadActiveIntoFormIfEmpty() }
 
@@ -124,6 +128,26 @@ fun SettingsScreen(
                 }
             }
 
+            // ---------- 预设模板 ----------
+            Text("预设模型模板", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(
+                onClick = { presetMenuOpen = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("一键填充 URL 与模型名(密钥仍由你填写)")
+            }
+            DropdownMenu(expanded = presetMenuOpen, onDismissRequest = { presetMenuOpen = false }) {
+                ModelPresets.list.forEach { preset ->
+                    DropdownMenuItem(
+                        text = { Text("${preset.name}  ·  ${preset.model.ifBlank { "模型名自填" }}") },
+                        onClick = {
+                            viewModel.applyPreset(preset)
+                            presetMenuOpen = false
+                        }
+                    )
+                }
+            }
+
             // ---------- 接口配置表单 ----------
             Text("接口配置", style = MaterialTheme.typography.titleMedium)
 
@@ -164,33 +188,38 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // ---------- 参数调节 ----------
-            Text("参数调节", style = MaterialTheme.typography.titleMedium)
+            // ---------- 参数调节(手动输入数值) ----------
+            Text("参数调节(手动输入数值)", style = MaterialTheme.typography.titleMedium)
 
-            Text("温度 Temperature: %.1f".format(form.temperature))
-            Slider(
-                value = form.temperature,
-                onValueChange = { v -> viewModel.updateForm { f -> f.copy(temperature = v) } },
-                valueRange = 0f..2f
-            )
-
-            Text("TopP: %.2f".format(form.topP))
-            Slider(
-                value = form.topP,
-                onValueChange = { v -> viewModel.updateForm { f -> f.copy(topP = v) } },
-                valueRange = 0f..1f
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FloatField(
+                    label = "温度(0~2)",
+                    value = form.temperature,
+                    range = 0f..2f,
+                    onCommit = { v -> viewModel.updateForm { f -> f.copy(temperature = v) } },
+                    modifier = Modifier.weight(1f)
+                )
+                FloatField(
+                    label = "TopP(0~1)",
+                    value = form.topP,
+                    range = 0f..1f,
+                    onCommit = { v -> viewModel.updateForm { f -> f.copy(topP = v) } },
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 NumberField(
                     label = "最大输出 tokens",
                     value = form.maxTokens,
+                    range = 1..32768,
                     onCommit = { v -> viewModel.updateForm { f -> f.copy(maxTokens = v) } },
                     modifier = Modifier.weight(1f)
                 )
                 NumberField(
                     label = "超时(秒)",
                     value = form.timeoutSeconds,
+                    range = 10..600,
                     onCommit = { v -> viewModel.updateForm { f -> f.copy(timeoutSeconds = v) } },
                     modifier = Modifier.weight(1f)
                 )
@@ -199,7 +228,43 @@ fun SettingsScreen(
             NumberField(
                 label = "上下文记忆轮数",
                 value = form.contextRounds,
+                range = 0..50,
                 onCommit = { v -> viewModel.updateForm { f -> f.copy(contextRounds = v) } },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // ---------- 高级选项 ----------
+            Text("高级选项", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("流式输出(打字机效果)")
+                    Text(
+                        "关闭后使用非流式单次问答",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = form.streamEnabled,
+                    onCheckedChange = { v -> viewModel.updateForm { f -> f.copy(streamEnabled = v) } }
+                )
+            }
+
+            OutlinedTextField(
+                value = form.customBody,
+                onValueChange = { viewModel.updateForm { f -> f.copy(customBody = it) } },
+                label = { Text("自定义请求体模板(可选)") },
+                placeholder = {
+                    Text(
+                        "留空使用默认模板。支持占位符:\n" +
+                            "{model} {messages} {temperature} {top_p} {max_tokens} {stream}"
+                    )
+                },
+                minLines = 3,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -250,11 +315,37 @@ fun SettingsScreen(
     }
 }
 
-/** 数字输入框:本地文本状态,仅在合法数字时提交,避免编辑过程中被重置 */
+/** 浮点输入框:本地文本状态,仅合法且在范围内时提交,防止 NaN/越界参数 */
+@Composable
+private fun FloatField(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onCommit: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            it.toFloatOrNull()
+                ?.takeIf { v -> v.isFinite() && v in range }
+                ?.let(onCommit)
+        },
+        label = { Text(label) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
+        modifier = modifier
+    )
+}
+
+/** 整数输入框:本地文本状态,仅合法且在范围内时提交 */
 @Composable
 private fun NumberField(
     label: String,
     value: Int,
+    range: IntRange,
     onCommit: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -263,7 +354,7 @@ private fun NumberField(
         value = text,
         onValueChange = {
             text = it
-            it.toIntOrNull()?.let(onCommit)
+            it.toIntOrNull()?.takeIf { v -> v in range }?.let(onCommit)
         },
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

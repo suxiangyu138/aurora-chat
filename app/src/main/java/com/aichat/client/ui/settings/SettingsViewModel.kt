@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aichat.client.ChatApplication
 import com.aichat.client.data.remote.ChatMessage
 import com.aichat.client.data.settings.ModelConfig
+import com.aichat.client.data.settings.ModelPresets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +56,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun loadIntoForm(config: ModelConfig) {
         _form.value = config
+    }
+
+    /** 应用预设模板:一键填充 URL 与模型名(API Key 由用户填写) */
+    fun applyPreset(preset: ModelPresets.Preset) {
+        _form.value = _form.value.copy(baseUrl = preset.baseUrl, modelName = preset.model)
     }
 
     /** 保存表单:有 id 则更新,否则新建并设为生效 */

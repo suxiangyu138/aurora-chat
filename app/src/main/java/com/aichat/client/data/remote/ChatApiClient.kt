@@ -69,6 +69,18 @@ class ChatApiClient {
         root.addProperty("top_p", config.topP)
         root.addProperty("max_tokens", config.maxTokens)
         root.addProperty("stream", stream)
+
+        // 自定义请求体模板:占位符替换,适配特殊模型接口
+        val template = config.customBody.trim()
+        if (template.isNotEmpty()) {
+            return template
+                .replace("{model}", config.modelName)
+                .replace("{messages}", msgs.toString())
+                .replace("{temperature}", config.temperature.toString())
+                .replace("{top_p}", config.topP.toString())
+                .replace("{max_tokens}", config.maxTokens.toString())
+                .replace("{stream}", stream.toString())
+        }
         return root.toString()
     }
 
