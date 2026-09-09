@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AI Chat"
+rootProject.name = "Aurora Chat"
 include(":app")

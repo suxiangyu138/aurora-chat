@@ -60,7 +60,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI Chat") },
+                title = { Text("Aurora Chat") },
                 actions = {
                     IconButton(onClick = onOpenAbout) {
                         Icon(Icons.Default.Info, contentDescription = "关于与开发者信息")

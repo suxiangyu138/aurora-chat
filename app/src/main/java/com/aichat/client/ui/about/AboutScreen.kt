@@ -63,7 +63,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 contentDescription = "应用图标",
                 modifier = Modifier.size(96.dp)
             )
-            Text("AI Chat", style = MaterialTheme.typography.headlineMedium)
+            Text("Aurora Chat", style = MaterialTheme.typography.headlineMedium)
             Text(
                 "版本 ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -101,9 +101,9 @@ fun AboutScreen(onBack: () -> Unit) {
             )
             Text(
                 "为保证后台对话不中断,建议在 iQOO 上完成以下设置:\n\n" +
-                    "1. 设置 → 应用与权限 → 应用管理 → AI Chat → 允许自启动\n" +
-                    "2. 设置 → 电池 → 后台耗电管理 → AI Chat → 允许后台高耗电\n" +
-                    "3. 最近任务界面 → 下拉锁定 AI Chat,防止误清理\n" +
+                    "1. 设置 → 应用与权限 → 应用管理 → Aurora Chat → 允许自启动\n" +
+                    "2. 设置 → 电池 → 后台耗电管理 → Aurora Chat → 允许后台高耗电\n" +
+                    "3. 最近任务界面 → 下拉锁定 Aurora Chat,防止误清理\n" +
                     "4. 允许通知:流式回答期间会显示保活通知",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

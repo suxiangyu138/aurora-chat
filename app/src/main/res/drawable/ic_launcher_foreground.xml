@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 白色对话气泡 + 靛蓝星芒(内容在 66dp 安全区内) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 主气泡 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,40 h32 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-16 l-6,7 v-7 h-10 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 z" />
+
+    <!-- 主星芒 -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M54,40 L56,46 L62,48 L56,50 L54,56 L52,50 L46,48 L52,46 Z" />
+
+    <!-- 小星芒 -->
+    <path
+        android:fillColor="#818CF8"
+        android:pathData="M66,38.5 L67.2,41.8 L70.5,43 L67.2,44.2 L66,47.5 L64.8,44.2 L61.5,43 L64.8,41.8 Z" />
+</vector>

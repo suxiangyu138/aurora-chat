@@ -25,7 +25,7 @@ class ChatKeepAliveService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("AI Chat")
+            .setContentTitle("Aurora Chat")
             .setContentText("正在接收回答,请勿清理…")
             .setSmallIcon(R.drawable.ic_launcher)
             .setOngoing(true)
