@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.sse.EventSource
@@ -33,8 +35,40 @@ class ChatViewModel(
     val session: StateFlow<SessionEntity?> = sessionRepository.observeSession(sessionId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val messages: StateFlow<List<MessageEntity>> = chatRepository.observeMessages(sessionId)
+    // ---------- 消息列表(分页懒加载:默认最新 PAGE_SIZE 条,向上滚动可加载更早) ----------
+
+    private val _limit = MutableStateFlow(PAGE_SIZE)
+
+    val messages: StateFlow<List<MessageEntity>> = _limit
+        .flatMapLatest { limit -> chatRepository.observeLatestMessages(sessionId, limit) }
+        .map { it.reversed() }   // 倒序查询 → 正序展示
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
+    /** 本次"加载更早"新增的条数(滚动锚点用) */
+    private val _earlierAdded = MutableStateFlow(0)
+    val earlierAdded: StateFlow<Int> = _earlierAdded.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val total = chatRepository.messageCount(sessionId)
+            _hasMore.value = total > PAGE_SIZE
+        }
+    }
+
+    fun loadEarlier() {
+        viewModelScope.launch {
+            val before = messages.value.size
+            val total = chatRepository.messageCount(sessionId)
+            _limit.value += PAGE_SIZE
+            _hasMore.value = total > _limit.value
+            _earlierAdded.value = (total - before).coerceIn(0, PAGE_SIZE)
+        }
+    }
+
+    // ---------- 流式状态 ----------
 
     /** 流式接收中的增量文本;null 表示未在流式输出 */
     private val _streamingText = MutableStateFlow<String?>(null)
@@ -52,6 +86,9 @@ class ChatViewModel(
     val pendingImage: StateFlow<ChatImage?> = _pendingImage.asStateFlow()
 
     private var eventSource: EventSource? = null
+    private var retryJob: Job? = null
+    private var streamAttempt = 0
+    private var userStopped = false
 
     fun attachImage(image: ChatImage) {
         _pendingImage.value = image
@@ -81,8 +118,89 @@ class ChatViewModel(
         }
     }
 
-    private var retryJob: Job? = null
-    private var streamAttempt = 0
+    /** 停止生成:终止 SSE,保留已收到的半截回复入库 */
+    fun stopStreaming() {
+        if (_streamingText.value == null) return
+        userStopped = true
+        retryJob?.cancel()
+        eventSource?.cancel()
+        viewModelScope.launch {
+            val partial = _streamingText.value.orEmpty()
+            val partialReasoning = _streamingReasoning.value.orEmpty()
+            if (partial.isNotBlank() || partialReasoning.isNotBlank()) {
+                chatRepository.saveAssistantMessage(
+                    sessionId, partial, partialReasoning.ifBlank { null }
+                )
+            }
+            _streamingText.value = null
+            _streamingReasoning.value = null
+            ChatKeepAliveService.stop(getApplication())
+            userStopped = false
+        }
+    }
+
+    // ---------- 消息操作 ----------
+
+    fun deleteMessage(message: MessageEntity) {
+        viewModelScope.launch { chatRepository.deleteMessage(message.id) }
+    }
+
+    /** 编辑用户消息:更新内容、删除其后所有消息并重新发送 */
+    fun editAndResend(message: MessageEntity, newText: String) {
+        val text = newText.trim()
+        if (text.isEmpty() || _streamingText.value != null) return
+        viewModelScope.launch {
+            val config = chatRepository.getActiveConfig()
+            if (config == null || !config.isComplete) {
+                _error.value = "请先在设置页填写接口 URL、API Key 和模型名称"
+                return@launch
+            }
+            chatRepository.editUserMessage(sessionId, message.id, text)
+            if (config.streamEnabled) {
+                startStreaming(config, text, null)
+            } else {
+                startNonStream(config, text, null)
+            }
+        }
+    }
+
+    /** 重新生成(或重试失败消息):删除该条 AI 消息,重发它前面的用户问题 */
+    fun regenerate(message: MessageEntity) {
+        if (_streamingText.value != null) return
+        viewModelScope.launch {
+            val config = chatRepository.getActiveConfig()
+            if (config == null || !config.isComplete) {
+                _error.value = "请先在设置页填写接口 URL、API Key 和模型名称"
+                return@launch
+            }
+            val app = getApplication<Application>()
+            _streamingText.value = ""
+            _streamingReasoning.value = ""
+            ChatKeepAliveService.start(app)
+            val source = chatRepository.regenerate(
+                sessionId = sessionId,
+                assistantMessageId = message.id,
+                config = config,
+                onDelta = { delta ->
+                    _streamingText.value = (_streamingText.value ?: "") + delta
+                },
+                onReasoning = { piece ->
+                    _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
+                },
+                onComplete = { full, reasoning -> onStreamDone(app, full, reasoning) },
+                onError = { msg -> onStreamError(app, config, msg) }
+            )
+            if (source == null) {
+                _streamingText.value = null
+                _streamingReasoning.value = null
+                ChatKeepAliveService.stop(app)
+            } else {
+                eventSource = source
+            }
+        }
+    }
+
+    // ---------- 流式/非流式执行 ----------
 
     private suspend fun startStreaming(config: ModelConfig, text: String, image: ChatImage?) {
         val app = getApplication<Application>()
@@ -118,8 +236,9 @@ class ChatViewModel(
         }
     }
 
-    /** 流式失败:未收到任何内容时自动重连(指数退避),已有内容则正常收尾 */
+    /** 流式失败:未收到任何内容时自动重连(指数退避);重试耗尽则落库错误气泡供手动重试 */
     private fun onStreamError(app: Application, config: ModelConfig, msg: String) {
+        if (userStopped) return   // 用户主动停止,stopStreaming 已收尾
         val nothingReceived = _streamingText.value.isNullOrEmpty() &&
             _streamingReasoning.value.isNullOrEmpty()
         if (nothingReceived && streamAttempt < MAX_RETRIES) {
@@ -131,9 +250,11 @@ class ChatViewModel(
             }
         } else {
             viewModelScope.launch {
-                _error.value = if (streamAttempt >= MAX_RETRIES && nothingReceived) {
+                val finalMsg = if (streamAttempt >= MAX_RETRIES && nothingReceived) {
                     "多次重连失败:$msg"
                 } else msg
+                // 失败消息持久化,气泡内提供重试按钮
+                chatRepository.saveErrorMessage(sessionId, "回答失败:$finalMsg")
                 _streamingText.value = null
                 _streamingReasoning.value = null
                 ChatKeepAliveService.stop(app)
@@ -174,7 +295,7 @@ class ChatViewModel(
                 }
             },
             onFailure = { e ->
-                _error.value = e.message ?: "请求失败"
+                chatRepository.saveErrorMessage(sessionId, "回答失败:${e.message ?: "请求失败"}")
             }
         )
         _streamingText.value = null
@@ -198,6 +319,7 @@ class ChatViewModel(
     }
 
     companion object {
+        private const val PAGE_SIZE = 30
         private const val MAX_RETRIES = 3
 
         fun factory(sessionId: Long): ViewModelProvider.Factory = viewModelFactory {

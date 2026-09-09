@@ -36,12 +36,23 @@
     border-radius: 4px;
   }
   pre {
-    margin: 0.5em 0; padding: 10px 12px;
+    position: relative;
+    margin: 0.5em 0; padding: 10px 12px 10px;
     background: rgba(128, 128, 128, 0.14);
     border-radius: 8px;
     overflow-x: auto;
   }
   pre code { background: transparent; padding: 0; }
+  .code-copy {
+    position: absolute; top: 6px; right: 6px;
+    font-size: 11px; line-height: 1.4;
+    padding: 2px 10px;
+    border-radius: 4px;
+    border: 1px solid rgba(128, 128, 128, 0.5);
+    background: rgba(128, 128, 128, 0.2);
+    color: inherit;
+    cursor: pointer;
+  }
   table {
     border-collapse: collapse; margin: 0.5em 0;
     display: block; overflow-x: auto; max-width: 100%;

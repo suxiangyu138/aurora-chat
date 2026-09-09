@@ -98,9 +98,35 @@ function setContent(markdownText, textColor, darkTheme) {
   });
 
   document.getElementById("content").innerHTML = html;
+  addCopyButtons();
   reportHeight();
   // 字体/图片异步加载后高度可能变化,延迟再报一次
   setTimeout(reportHeight, 200);
+}
+
+/* 为每个代码块附加复制按钮 */
+function addCopyButtons() {
+  var pres = document.querySelectorAll("pre");
+  for (var i = 0; i < pres.length; i++) {
+    var pre = pres[i];
+    if (pre.querySelector(".code-copy")) continue;
+    var btn = document.createElement("button");
+    btn.className = "code-copy";
+    btn.textContent = "复制";
+    btn.onclick = (function (p) {
+      return function () {
+        var code = p.querySelector("code");
+        var text = code ? code.innerText : p.innerText;
+        if (window.MdBridge) {
+          window.MdBridge.copyText(text);
+        }
+        var self = this;
+        self.textContent = "已复制";
+        setTimeout(function () { self.textContent = "复制"; }, 1500);
+      };
+    })(pre);
+    pre.appendChild(btn);
+  }
 }
 
 function reportHeight() {

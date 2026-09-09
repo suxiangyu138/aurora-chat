@@ -1,10 +1,14 @@
 package com.aichat.client.ui.chat
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Color as AndroidColor
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,7 +61,7 @@ fun MarkdownView(
                 isHorizontalScrollBarEnabled = false
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = false
-                // JS 桥:渲染完成后回传内容高度(px)
+                // JS 桥:高度回传 + 代码块复制
                 addJavascriptInterface(object {
                     @JavascriptInterface
                     fun onHeight(px: Float) {
@@ -65,6 +69,16 @@ fun MarkdownView(
                             // 加冗余量:部分机型/字体下 WebView 上报高度略小于实际渲染高度,
                             // 最后一行会被裁切;多留几 dp 保证单行文本完整显示
                             heightDp = (px / resources.displayMetrics.density).coerceAtLeast(24f) + 4f
+                        }
+                    }
+
+                    @JavascriptInterface
+                    fun copyText(text: String) {
+                        post {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                as? ClipboardManager
+                            cm?.setPrimaryClip(ClipData.newPlainText("code", text))
+                            Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }, "MdBridge")
