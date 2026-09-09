@@ -4,8 +4,11 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -90,6 +93,24 @@ fun MarkdownView(
                     override fun onPageFinished(view: WebView?, url: String?) {
                         pageLoaded = true
                         view?.let { sendContent(it) }
+                    }
+
+                    // 安全:仅允许加载本地渲染页;外部链接交给系统浏览器,
+                    // 防止 WebView 导航到远程页面后访问本地 JS 桥(剪贴板等)
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString()
+                        if (url != null && url.startsWith("file:///android_asset/")) {
+                            return false
+                        }
+                        if (url != null) {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }
+                        }
+                        return true
                     }
                 }
                 loadUrl("file:///android_asset/md/template.html")
