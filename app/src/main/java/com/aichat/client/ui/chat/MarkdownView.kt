@@ -35,7 +35,7 @@ fun MarkdownView(
     val currentContent = rememberUpdatedState(content)
     val currentColor = rememberUpdatedState(textColorCss)
     val currentDark = rememberUpdatedState(darkTheme)
-    var heightDp by remember { mutableFloatStateOf(16f) }
+    var heightDp by remember { mutableFloatStateOf(28f) }
     var pageLoaded by remember { mutableStateOf(false) }
     var sentKey by remember { mutableStateOf("") }
     val density = LocalDensity.current
@@ -62,7 +62,9 @@ fun MarkdownView(
                     @JavascriptInterface
                     fun onHeight(px: Float) {
                         post {
-                            heightDp = (px / resources.displayMetrics.density).coerceAtLeast(16f)
+                            // 加冗余量:部分机型/字体下 WebView 上报高度略小于实际渲染高度,
+                            // 最后一行会被裁切;多留几 dp 保证单行文本完整显示
+                            heightDp = (px / resources.displayMetrics.density).coerceAtLeast(24f) + 4f
                         }
                     }
                 }, "MdBridge")
