@@ -44,9 +44,35 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY createdAt ASC LIMIT 1")
     suspend fun getFirst(sessionId: Long): MessageEntity?
 
+    /** 分页:观察最新 N 条(倒序,展示时反转)——历史消息懒加载 */
+    @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY createdAt DESC, id DESC LIMIT :limit")
+    fun observeLatest(sessionId: Long, limit: Int): Flow<List<MessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE sessionId = :sessionId")
+    suspend fun count(sessionId: Long): Int
+
     @Insert
     suspend fun insert(message: MessageEntity): Long
 
     @Query("DELETE FROM messages WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: Long)
+
+    /** 删除单条消息 */
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    /** 更新消息内容(编辑用户消息用) */
+    @Query("UPDATE messages SET content = :content WHERE id = :id")
+    suspend fun updateContent(id: Long, content: String)
+
+    /** 删除某消息及其之后的所有消息(编辑重发用) */
+    @Query("DELETE FROM messages WHERE sessionId = :sessionId AND id >= :fromId")
+    suspend fun deleteFrom(sessionId: Long, fromId: Long)
+
+    /** 找某消息之前的最近一条用户消息(重新生成/重试用) */
+    @Query(
+        "SELECT * FROM messages WHERE sessionId = :sessionId AND id < :beforeId AND role = 'user' " +
+            "ORDER BY createdAt DESC, id DESC LIMIT 1"
+    )
+    suspend fun getLastUserBefore(sessionId: Long, beforeId: Long): MessageEntity?
 }

@@ -34,5 +34,9 @@ data class MessageEntity(
     val content: String,
     /** 思考过程(DeepSeek-R1/GLM 等模型的 reasoning_content,无则 null) */
     val reasoning: String? = null,
+    /** 消息状态:"done" 正常 / "error" 失败(展示重试按钮) */
+    val status: String = "done",
     val createdAt: Long
-)
+) {
+    val isError: Boolean get() = status == "error"
+}
