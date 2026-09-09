@@ -4,15 +4,7 @@
 
 Aurora Chat 是一款通用型自定义 AI 大模型聊天安卓客户端:用户自定义接口 URL、API Key、模型参数,兼容 DeepSeek、通义千问、文心一言、讯飞星火、智谱、百川、Kimi、豆包、OpenAI、Claude 等所有主流国产/海外大模型的 HTTP API。**纯本地运行,无后端服务器,密钥不离开你的设备。**
 
-| 首页 | 对话(Markdown + LaTeX) |
-|---|---|
-| ![首页](docs/screenshots/home.png) | ![对话](docs/screenshots/chat.png) |
-
-| 模型配置 | 关于 |
-|---|---|
-| ![配置](docs/screenshots/settings.png) | ![关于](docs/screenshots/about.png) |
-
-## ✨ 功能特性
+## 功能特性
 
 - **全模型通用**:通用 JSON 请求模板,预设 9 大厂商模板一键填充 URL(密钥自填),自定义请求体模板编辑
 - **极致对话体验**:SSE 流式打字机 + 呼吸灯动画、Markdown/LaTeX(KaTeX)渲染、代码语法高亮、思考过程可展开收起、多模态图片输入
@@ -22,7 +14,7 @@ Aurora Chat 是一款通用型自定义 AI 大模型聊天安卓客户端:用户
 - **个性化**:深色模式三态(跟随系统/浅色/深色)+ 7 种主题色
 - **iQOO 专属适配**:OriginOS 后台保活(流式期间前台服务)、断线自动重连(指数退避)、手势导航条避让
 
-## 🚀 快速开始
+## 快速开始
 
 ### 下载安装
 
@@ -51,7 +43,7 @@ cd aurora-chat
 
 详细环境搭建与真机调试指南见 [环境配置说明.md](环境配置说明.md),需求与方案见 [开发说明.md](开发说明.md)。
 
-## 🏗️ 技术栈
+## 技术栈
 
 | 层 | 技术 |
 |---|---|
@@ -63,7 +55,7 @@ cd aurora-chat
 | 构建 | Gradle 8.14.3 / AGP 8.13.2 / Kotlin 2.3.20 / KSP |
 | 最低系统 | Android 11(minSdk 30) |
 
-## 📁 项目结构
+## 项目结构
 
 ```
 app/src/main/java/com/aichat/client/
@@ -85,11 +77,11 @@ app/src/main/java/com/aichat/client/
     └── about/                 # 关于页(开发者信息)
 ```
 
-## 📄 许可
+## 许可
 
 个人项目,保留所有权利。代码仅供学习交流。
 
-## 🙋 关于作者
+## 关于作者
 
 - 开发者:苏巷雨
 - 联系:1368614311@qq.com
