@@ -44,15 +44,15 @@ kotlin {
 }
 
 dependencies {
-    // AndroidX 基础
-    implementation("androidx.core:core-ktx:1.19.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-    implementation("androidx.activity:activity-compose:1.13.0")
+    // AndroidX 基础(2025 年中稳定版,与 AGP 8.13/compileSdk 36 匹配)
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
+    implementation("androidx.activity:activity-compose:1.11.0")
 
     // Compose(版本由 BOM 统一管理)
-    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -62,7 +62,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // 导航
-    implementation("androidx.navigation:navigation-compose:2.10.0")
+    implementation("androidx.navigation:navigation-compose:2.9.0")
 
     // 网络:OkHttp(通用请求 + SSE 流式)+ Retrofit(预留)+ Gson(JSON 解析)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
