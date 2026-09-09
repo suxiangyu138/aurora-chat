@@ -1,6 +1,9 @@
 package com.aichat.client.ui.settings
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aichat.client.ChatApplication
@@ -14,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -125,5 +129,67 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun consumeTestResult() {
         _testResult.value = null
+    }
+
+    // ---------- 备份导入导出 ----------
+
+    /** 待启动的分享 Intent(导出配置) */
+    private val _exportIntent = MutableStateFlow<Intent?>(null)
+    val exportIntent: StateFlow<Intent?> = _exportIntent.asStateFlow()
+
+    /** (成功, 消息) 的备份操作结果 */
+    private val _backupResult = MutableStateFlow<Pair<Boolean, String>?>(null)
+    val backupResult: StateFlow<Pair<Boolean, String>?> = _backupResult.asStateFlow()
+
+    fun exportConfigs() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val file = File(app.cacheDir, "backup/configs_backup.json")
+            runCatching {
+                file.parentFile?.mkdirs()
+                file.writeText(settingsRepository.exportConfigs())
+            }.onSuccess {
+                val uri = FileProvider.getUriForFile(app, "com.aichat.client.fileprovider", file)
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                _exportIntent.value = Intent.createChooser(share, "导出配置备份")
+            }.onFailure {
+                _backupResult.value = false to "导出失败:${it.message}"
+            }
+        }
+    }
+
+    fun consumeExportIntent() {
+        _exportIntent.value = null
+    }
+
+    fun importConfigs(uri: Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val json = runCatching {
+                app.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+            }.getOrNull()
+            if (json.isNullOrBlank()) {
+                _backupResult.value = false to "读取文件失败"
+                return@launch
+            }
+            val count = settingsRepository.importConfigs(json)
+            _backupResult.value = if (count > 0) true to "导入成功:共 $count 套配置"
+            else false to "未在文件中找到有效配置"
+        }
+    }
+
+    fun consumeBackupResult() {
+        _backupResult.value = null
+    }
+
+    fun clearAllConfigs() {
+        viewModelScope.launch {
+            settingsRepository.clearAllConfigs()
+            _backupResult.value = true to "已清空所有配置"
+        }
     }
 }

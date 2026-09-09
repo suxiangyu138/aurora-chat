@@ -158,4 +158,38 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun getActiveConfig(): ModelConfig? = activeConfig.first()
+
+    // ---------- 备份导入导出 ----------
+
+    /** 导出全部配置为 JSON(含明文 API Key,由 UI 层提示用户妥善保管) */
+    suspend fun exportConfigs(): String {
+        val list = allConfigs.first()
+        return gson.toJson(list)
+    }
+
+    /** 从 JSON 导入配置,返回成功导入数量(同名 id 覆盖,空 id 自动生成) */
+    suspend fun importConfigs(json: String): Int {
+        val type = object : TypeToken<List<JsonObject>>() {}.type
+        val arr: List<JsonObject> = runCatching { gson.fromJson<List<JsonObject>>(json, type) }
+            .getOrDefault(emptyList())
+        var count = 0
+        for (obj in arr) {
+            val config = parseConfig(obj, decryptKeys = true)
+            if (config.baseUrl.isBlank()) continue
+            val imported = if (config.id.isBlank()) {
+                config.copy(id = java.util.UUID.randomUUID().toString())
+            } else config
+            saveConfig(imported)
+            count++
+        }
+        return count
+    }
+
+    /** 一键清空全部配置 */
+    suspend fun clearAllConfigs() {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CONFIGS] = "[]"
+            prefs[KEY_ACTIVE_ID] = ""
+        }
+    }
 }

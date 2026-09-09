@@ -1,5 +1,7 @@
 package com.aichat.client.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -81,10 +84,26 @@ fun SettingsScreen(
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val accentArgb by viewModel.accentArgb.collectAsStateWithLifecycle()
+    val exportIntent by viewModel.exportIntent.collectAsStateWithLifecycle()
+    val backupResult by viewModel.backupResult.collectAsStateWithLifecycle()
     var apiKeyVisible by remember { mutableStateOf(false) }
     var presetMenuOpen by remember { mutableStateOf(false) }
+    var clearConfirm by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { viewModel.importConfigs(it) } }
 
     LaunchedEffect(Unit) { viewModel.loadActiveIntoFormIfEmpty() }
+
+    // 导出配置:启动系统分享面板
+    LaunchedEffect(exportIntent) {
+        exportIntent?.let {
+            context.startActivity(it)
+            viewModel.consumeExportIntent()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -328,6 +347,28 @@ fun SettingsScreen(
                 }
             }
 
+            // ---------- 备份与恢复 ----------
+            Text("备份与恢复", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "导出会生成包含 API Key 的明文 JSON 文件,请妥善保管,勿公开分享。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { viewModel.exportConfigs() },
+                    modifier = Modifier.weight(1f)
+                ) { Text("导出配置") }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("导入配置") }
+                OutlinedButton(
+                    onClick = { clearConfirm = true },
+                    modifier = Modifier.weight(1f)
+                ) { Text("清空配置") }
+            }
+
             // ---------- 操作按钮 ----------
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -370,6 +411,36 @@ fun SettingsScreen(
             text = { Text(message) },
             confirmButton = {
                 TextButton(onClick = { viewModel.consumeTestResult() }) { Text("知道了") }
+            }
+        )
+    }
+
+    // 备份操作结果对话框
+    backupResult?.let { (ok, message) ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeBackupResult() },
+            title = { Text(if (ok) "操作成功" else "操作失败") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeBackupResult() }) { Text("知道了") }
+            }
+        )
+    }
+
+    // 清空配置确认对话框
+    if (clearConfirm) {
+        AlertDialog(
+            onDismissRequest = { clearConfirm = false },
+            title = { Text("清空所有配置") },
+            text = { Text("将删除全部模型配置(会话记录不受影响),确定继续?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearAllConfigs()
+                    clearConfirm = false
+                }) { Text("清空", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearConfirm = false }) { Text("取消") }
             }
         )
     }
