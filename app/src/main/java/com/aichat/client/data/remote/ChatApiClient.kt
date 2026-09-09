@@ -55,10 +55,14 @@ class ChatApiClient {
         .build()
 
     /** 按配置自定义超时(解决部分模型接口响应慢的问题) */
-    private fun clientWithTimeout(config: ModelConfig): OkHttpClient =
-        baseClient.newBuilder()
-            .readTimeout(config.timeoutSeconds.coerceIn(10, 600).toLong(), TimeUnit.SECONDS)
+    private fun clientWithTimeout(config: ModelConfig, streaming: Boolean = false): OkHttpClient {
+        val timeout = config.timeoutSeconds.coerceIn(10, 600)
+        // 流式读超时下限 300 秒:推理模型思考停顿久,短超时会掐断流式输出
+        val readTimeout = if (streaming) timeout.coerceAtLeast(300) else timeout
+        return baseClient.newBuilder()
+            .readTimeout(readTimeout.toLong(), TimeUnit.SECONDS)
             .build()
+    }
 
     // ---------- 通用请求模板 ----------
 
@@ -131,6 +135,7 @@ class ChatApiClient {
     /**
      * 流式对话:SSE 实时输出,所有回调在主线程执行。
      * onReasoning 输出思考过程(reasoning_content),onComplete 同时带回完整回答与思考。
+     * onInterrupted:流式进行中被中断(网络抖动/超时),已生成的部分内容带回,由调用方决定处理。
      * 返回 EventSource,调用方可通过 cancel() 主动终止(页面销毁自动取消)。
      */
     fun streamChat(
@@ -139,10 +144,11 @@ class ChatApiClient {
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
         onComplete: (fullText: String, reasoning: String) -> Unit,
+        onInterrupted: (fullText: String, reasoning: String, message: String) -> Unit,
         onError: (String) -> Unit
     ): EventSource {
         val request = buildRequest(config, buildRequestBody(config, messages, true), stream = true)
-        return EventSources.createFactory(clientWithTimeout(config))
+        return EventSources.createFactory(clientWithTimeout(config, streaming = true))
             .newEventSource(request, object : EventSourceListener() {
                 private val fullText = StringBuilder()
                 private val fullReasoning = StringBuilder()
@@ -169,12 +175,12 @@ class ChatApiClient {
                     val message = when {
                         response != null -> "接口错误 HTTP ${response.code}: ${response.message}"
                         t != null -> "网络异常: ${t.message ?: t.javaClass.simpleName}"
-                        else -> "未知错误"
+                        else -> "连接中断"
                     }
                     mainHandler.post {
-                        // 已有部分内容输出时视为正常结束,否则报错
+                        // 有部分内容:不算正常结束,明确上报中断;无内容才报错
                         if (fullText.isEmpty() && fullReasoning.isEmpty()) onError(message)
-                        else onComplete(fullText.toString(), fullReasoning.toString())
+                        else onInterrupted(fullText.toString(), fullReasoning.toString(), message)
                     }
                 }
             })

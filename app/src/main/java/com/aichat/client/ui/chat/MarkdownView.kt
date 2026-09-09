@@ -34,11 +34,13 @@ fun MarkdownView(
     content: String,
     textColorCss: String,
     darkTheme: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onHeightChange: (() -> Unit)? = null
 ) {
     val currentContent = rememberUpdatedState(content)
     val currentColor = rememberUpdatedState(textColorCss)
     val currentDark = rememberUpdatedState(darkTheme)
+    val currentOnHeightChange = rememberUpdatedState(onHeightChange)
     var heightDp by remember { mutableFloatStateOf(28f) }
     var pageLoaded by remember { mutableStateOf(false) }
     var sentKey by remember { mutableStateOf("") }
@@ -69,6 +71,8 @@ fun MarkdownView(
                             // 加冗余量:部分机型/字体下 WebView 上报高度略小于实际渲染高度,
                             // 最后一行会被裁切;多留几 dp 保证单行文本完整显示
                             heightDp = (px / resources.displayMetrics.density).coerceAtLeast(24f) + 4f
+                            // 通知外部:流式气泡高度变化时保持底部跟随,防止新内容被压住
+                            currentOnHeightChange.value?.invoke()
                         }
                     }
 

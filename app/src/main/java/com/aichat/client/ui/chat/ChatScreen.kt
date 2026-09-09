@@ -157,11 +157,17 @@ fun ChatScreen(
             initialized = true
         }
     }
-    // 新内容到达:在底部才跟随
+    // 新内容到达:在底部才跟随(流式期间即时跟随,不用动画,防止高度异步更新时被压住)
     LaunchedEffect(messages.size, streamingText?.length) {
         if (atBottom) {
             val total = messages.size + if (isStreaming) 1 else 0
-            if (total > 0) listState.animateScrollToItem(total - 1 + headerOffset)
+            if (total > 0) listState.scrollToItem(total - 1 + headerOffset)
+        }
+    }
+    // 流式结束后再校准一次位置(气泡高度停止变化后保证底部对齐)
+    LaunchedEffect(isStreaming) {
+        if (!isStreaming && atBottom && messages.isNotEmpty()) {
+            listState.scrollToItem(messages.size - 1 + headerOffset)
         }
     }
     // 加载更早的消息后:锚定到新增部分的开头,保持阅读位置
@@ -355,7 +361,16 @@ fun ChatScreen(
                             createdAt = 0
                         ),
                         streaming = true,
-                        streamingReasoning = streamingReasoning.orEmpty()
+                        streamingReasoning = streamingReasoning.orEmpty(),
+                        onHeightChange = {
+                            // 气泡高度异步变化时保持底部跟随,防止新内容被输入栏压住
+                            if (atBottom) {
+                                scope.launch {
+                                    val total = messages.size + 1
+                                    listState.scrollToItem(total - 1 + headerOffset)
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -397,7 +412,8 @@ private fun MessageItem(
     onCopy: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onHeightChange: (() -> Unit)? = null
 ) {
     val isUser = message.role == "user"
     var menuOpen by remember { mutableStateOf(false) }
@@ -417,7 +433,8 @@ private fun MessageItem(
                     message = message,
                     streaming = streaming,
                     streamingReasoning = streamingReasoning,
-                    onRetry = onRegenerate
+                    onRetry = onRegenerate,
+                    onHeightChange = onHeightChange
                 )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -463,7 +480,8 @@ private fun MessageBubble(
     message: MessageEntity,
     streaming: Boolean = false,
     streamingReasoning: String = "",
-    onRetry: (() -> Unit)? = null
+    onRetry: (() -> Unit)? = null,
+    onHeightChange: (() -> Unit)? = null
 ) {
     val isUser = message.role == "user"
     val darkTheme = isSystemInDarkTheme()
@@ -542,7 +560,8 @@ private fun MessageBubble(
                         content = message.content + if (streaming) " ▌" else "",
                         textColorCss = textColorCss,
                         darkTheme = darkTheme,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        onHeightChange = onHeightChange
                     )
                 }
             }

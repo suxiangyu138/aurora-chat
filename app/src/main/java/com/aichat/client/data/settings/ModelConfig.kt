@@ -11,8 +11,8 @@ data class ModelConfig(
     val modelName: String = "",
     val temperature: Float = 0.7f,
     val topP: Float = 1.0f,
-    val maxTokens: Int = 2048,
-    val timeoutSeconds: Int = 60,
+    val maxTokens: Int = 8192,
+    val timeoutSeconds: Int = 300,
     val contextRounds: Int = 10,
     /** 流式输出开关(关闭后走非流式单次问答) */
     val streamEnabled: Boolean = true,

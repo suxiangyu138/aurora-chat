@@ -54,6 +54,7 @@ class ChatRepository(
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
         onComplete: (fullText: String, reasoning: String) -> Unit,
+        onInterrupted: (fullText: String, reasoning: String, message: String) -> Unit,
         onError: (String) -> Unit
     ): EventSource {
         val now = System.currentTimeMillis()
@@ -77,7 +78,9 @@ class ChatRepository(
         }
 
         val messages = buildContext(sessionId, question, config.contextRounds, image)
-        return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
+        return apiClient.streamChat(
+            config, messages, onDelta, onReasoning, onComplete, onInterrupted, onError
+        )
     }
 
     /** 断线重连:不重复入库,直接用库中历史(含最后一条用户消息)重发请求 */
@@ -87,11 +90,14 @@ class ChatRepository(
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
         onComplete: (fullText: String, reasoning: String) -> Unit,
+        onInterrupted: (fullText: String, reasoning: String, message: String) -> Unit,
         onError: (String) -> Unit
     ): EventSource {
         val history = database.messageDao().getRecent(sessionId, config.contextRounds * 2 + 1)
         val messages = history.reversed().map { ChatMessage(it.role, it.content) }
-        return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
+        return apiClient.streamChat(
+            config, messages, onDelta, onReasoning, onComplete, onInterrupted, onError
+        )
     }
 
     /** AI 回复完整入库(含思考过程) */
@@ -143,6 +149,7 @@ class ChatRepository(
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
         onComplete: (fullText: String, reasoning: String) -> Unit,
+        onInterrupted: (fullText: String, reasoning: String, message: String) -> Unit,
         onError: (String) -> Unit
     ): EventSource? {
         val userMessage = database.messageDao().getLastUserBefore(sessionId, assistantMessageId)
@@ -150,7 +157,9 @@ class ChatRepository(
         database.messageDao().deleteById(assistantMessageId)
         val history = database.messageDao().getRecent(sessionId, config.contextRounds * 2 + 1)
         val messages = history.reversed().map { ChatMessage(it.role, it.content) }
-        return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
+        return apiClient.streamChat(
+            config, messages, onDelta, onReasoning, onComplete, onInterrupted, onError
+        )
     }
 
     /** 非流式单次问答(用户消息已入库,调用方保存返回结果) */

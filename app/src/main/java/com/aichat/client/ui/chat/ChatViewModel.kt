@@ -202,6 +202,9 @@ class ChatViewModel(
                     _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
                 },
                 onComplete = { full, reasoning -> onStreamDone(app, full, reasoning) },
+                onInterrupted = { full, reasoning, msg ->
+                    onStreamInterrupted(app, full, reasoning, msg)
+                },
                 onError = { msg -> onStreamError(app, config, msg) }
             )
             if (source == null) {
@@ -234,6 +237,9 @@ class ChatViewModel(
                 _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
             },
             onComplete = { full, reasoning -> onStreamDone(app, full, reasoning) },
+            onInterrupted = { full, reasoning, msg ->
+                onStreamInterrupted(app, full, reasoning, msg)
+            },
             onError = { msg -> onStreamError(app, config, msg) }
         )
     }
@@ -247,6 +253,20 @@ class ChatViewModel(
             _streamingText.value = null
             _streamingReasoning.value = null
             ChatKeepAliveService.stop(app)
+        }
+    }
+
+    /** 流式中断(已有部分内容):保存已生成内容,明确提示,可重新生成继续 */
+    private fun onStreamInterrupted(app: Application, full: String, reasoning: String, msg: String) {
+        viewModelScope.launch {
+            streamAttempt = 0
+            if (full.isNotBlank() || reasoning.isNotBlank()) {
+                chatRepository.saveAssistantMessage(sessionId, full, reasoning.ifBlank { null })
+            }
+            _streamingText.value = null
+            _streamingReasoning.value = null
+            ChatKeepAliveService.stop(app)
+            _error.value = "输出中断($msg),已保存当前内容,可重新生成继续"
         }
     }
 
@@ -288,6 +308,9 @@ class ChatViewModel(
             },
             onComplete = { full, reasoning ->
                 onStreamDone(getApplication(), full, reasoning)
+            },
+            onInterrupted = { full, reasoning, msg ->
+                onStreamInterrupted(getApplication(), full, reasoning, msg)
             },
             onError = { msg ->
                 onStreamError(getApplication(), config, msg)
