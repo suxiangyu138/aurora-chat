@@ -36,6 +36,8 @@ data class MessageEntity(
     val reasoning: String? = null,
     /** 消息状态:"done" 正常 / "error" 失败(展示重试按钮) */
     val status: String = "done",
+    /** 用户消息携带的图片(base64 压缩后存储,气泡内独立展示) */
+    val imageBase64: String? = null,
     val createdAt: Long
 ) {
     val isError: Boolean get() = status == "error"

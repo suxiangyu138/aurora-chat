@@ -60,7 +60,13 @@ class ChatRepository(
         val isFirstMessage = database.messageDao().getFirst(sessionId) == null
 
         database.messageDao().insert(
-            MessageEntity(sessionId = sessionId, role = "user", content = question, createdAt = now)
+            MessageEntity(
+                sessionId = sessionId,
+                role = "user",
+                content = question,
+                imageBase64 = image?.base64,
+                createdAt = now
+            )
         )
         database.sessionDao().touch(sessionId, now)
 
@@ -156,7 +162,13 @@ class ChatRepository(
     ): Result<ChatResult> {
         val now = System.currentTimeMillis()
         database.messageDao().insert(
-            MessageEntity(sessionId = sessionId, role = "user", content = question, createdAt = now)
+            MessageEntity(
+                sessionId = sessionId,
+                role = "user",
+                content = question,
+                imageBase64 = image?.base64,
+                createdAt = now
+            )
         )
         database.sessionDao().touch(sessionId, now)
         val messages = buildContext(sessionId, question, config.contextRounds, image)
