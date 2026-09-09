@@ -3,6 +3,7 @@ package com.aichat.client.data.repository
 import com.aichat.client.data.local.AppDatabase
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.remote.ChatApiClient
+import com.aichat.client.data.remote.ChatImage
 import com.aichat.client.data.remote.ChatMessage
 import com.aichat.client.data.remote.ChatResult
 import com.aichat.client.data.settings.ModelConfig
@@ -22,15 +23,16 @@ class ChatRepository(
 
     suspend fun getActiveConfig(): ModelConfig? = settingsRepository.getActiveConfig()
 
-    /** 组装上下文:最近 N 轮历史 + 新问题 */
+    /** 组装上下文:最近 N 轮历史 + 新问题(新问题可携带图片) */
     private suspend fun buildContext(
         sessionId: Long,
         newQuestion: String,
-        rounds: Int
+        rounds: Int,
+        image: ChatImage? = null
     ): List<ChatMessage> {
         val history = database.messageDao().getRecent(sessionId, rounds * 2)
         return history.reversed().map { ChatMessage(it.role, it.content) } +
-            ChatMessage("user", newQuestion)
+            ChatMessage("user", newQuestion, image?.base64, image?.mime)
     }
 
     /**
@@ -42,6 +44,7 @@ class ChatRepository(
         sessionId: Long,
         config: ModelConfig,
         question: String,
+        image: ChatImage? = null,
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
         onComplete: (fullText: String, reasoning: String) -> Unit,
@@ -61,7 +64,7 @@ class ChatRepository(
             database.sessionDao().rename(sessionId, title)
         }
 
-        val messages = buildContext(sessionId, question, config.contextRounds)
+        val messages = buildContext(sessionId, question, config.contextRounds, image)
         return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
     }
 
@@ -83,14 +86,15 @@ class ChatRepository(
     suspend fun sendMessageOnce(
         sessionId: Long,
         config: ModelConfig,
-        question: String
+        question: String,
+        image: ChatImage? = null
     ): Result<ChatResult> {
         val now = System.currentTimeMillis()
         database.messageDao().insert(
             MessageEntity(sessionId = sessionId, role = "user", content = question, createdAt = now)
         )
         database.sessionDao().touch(sessionId, now)
-        val messages = buildContext(sessionId, question, config.contextRounds)
+        val messages = buildContext(sessionId, question, config.contextRounds, image)
         return apiClient.chatOnce(config, messages)
     }
 

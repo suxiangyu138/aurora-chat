@@ -1,5 +1,9 @@
 package com.aichat.client.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +37,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -59,14 +65,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aichat.client.data.local.MessageEntity
+import com.aichat.client.data.remote.ImageUtils
 
 /** 聊天页:消息列表 + 流式打字机输出 + 输入栏 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,10 +91,21 @@ fun ChatScreen(
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val streamingReasoning by viewModel.streamingReasoning.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val pendingImage by viewModel.pendingImage.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     val isStreaming = streamingText != null
+    val context = LocalContext.current
+
+    // 系统相册选择器(无需存储权限)
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { u ->
+            ImageUtils.uriToChatImage(context, u)?.let { viewModel.attachImage(it) }
+        }
+    }
 
     // 错误提示(密钥错误、超时等)
     LaunchedEffect(error) {
@@ -130,28 +151,67 @@ fun ChatScreen(
                     WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
                 )
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("输入消息…") },
-                        maxLines = 4
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FilledIconButton(
-                        onClick = {
-                            viewModel.send(input)
-                            input = ""
-                        },
-                        enabled = input.isNotBlank() && !isStreaming
+                Column {
+                    // 待发送图片预览
+                    val pending = pendingImage
+                    if (pending != null) {
+                        val bitmap = remember(pending) {
+                            ImageUtils.base64ToBitmap(pending.base64)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            bitmap?.let {
+                                Image(
+                                    bitmap = it.asImageBitmap(),
+                                    contentDescription = "待发送图片",
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { viewModel.removeImage() }) {
+                                Icon(Icons.Default.Close, contentDescription = "移除图片")
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.Bottom
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = "发送")
+                        IconButton(
+                            onClick = {
+                                imagePicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            enabled = !isStreaming
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "添加图片")
+                        }
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("输入消息…") },
+                            maxLines = 4
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilledIconButton(
+                            onClick = {
+                                viewModel.send(input)
+                                input = ""
+                            },
+                            enabled = (input.isNotBlank() || pendingImage != null) && !isStreaming
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = "发送")
+                        }
                     }
                 }
             }

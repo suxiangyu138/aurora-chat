@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.aichat.client.ChatApplication
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.local.SessionEntity
+import com.aichat.client.data.remote.ChatImage
 import com.aichat.client.data.settings.ModelConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,32 +44,48 @@ class ChatViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** 待发送的图片(多模态输入) */
+    private val _pendingImage = MutableStateFlow<ChatImage?>(null)
+    val pendingImage: StateFlow<ChatImage?> = _pendingImage.asStateFlow()
+
     private var eventSource: EventSource? = null
+
+    fun attachImage(image: ChatImage) {
+        _pendingImage.value = image
+    }
+
+    fun removeImage() {
+        _pendingImage.value = null
+    }
 
     fun send(question: String) {
         val text = question.trim()
-        if (text.isEmpty() || _streamingText.value != null) return
+        if (text.isEmpty() && _pendingImage.value == null) return
+        if (_streamingText.value != null) return
         viewModelScope.launch {
             val config = chatRepository.getActiveConfig()
             if (config == null || !config.isComplete) {
                 _error.value = "请先在设置页填写接口 URL、API Key 和模型名称"
                 return@launch
             }
+            val image = _pendingImage.value
+            _pendingImage.value = null
             if (config.streamEnabled) {
-                startStreaming(config, text)
+                startStreaming(config, text, image)
             } else {
-                startNonStream(config, text)
+                startNonStream(config, text, image)
             }
         }
     }
 
-    private suspend fun startStreaming(config: ModelConfig, text: String) {
+    private suspend fun startStreaming(config: ModelConfig, text: String, image: ChatImage?) {
         _streamingText.value = ""
         _streamingReasoning.value = ""
         eventSource = chatRepository.sendMessageStream(
             sessionId = sessionId,
             config = config,
             question = text,
+            image = image,
             onDelta = { delta ->
                 _streamingText.value = (_streamingText.value ?: "") + delta
             },
@@ -96,9 +113,9 @@ class ChatViewModel(
         )
     }
 
-    private suspend fun startNonStream(config: ModelConfig, text: String) {
+    private suspend fun startNonStream(config: ModelConfig, text: String, image: ChatImage?) {
         _streamingText.value = ""   // 空串表示等待中(呼吸灯)
-        val result = chatRepository.sendMessageOnce(sessionId, config, text)
+        val result = chatRepository.sendMessageOnce(sessionId, config, text, image)
         result.fold(
             onSuccess = { chatResult ->
                 if (chatResult.content.isNotBlank() || !chatResult.reasoning.isNullOrBlank()) {

@@ -21,8 +21,18 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-/** 上下文消息(发给 API 的通用格式) */
-data class ChatMessage(val role: String, val content: String)
+/** 上下文消息(发给 API 的通用格式;image 非空时为多模态消息) */
+data class ChatMessage(
+    val role: String,
+    val content: String,
+    val imageBase64: String? = null,
+    val imageMime: String? = null
+) {
+    val hasImage: Boolean get() = !imageBase64.isNullOrBlank() && !imageMime.isNullOrBlank()
+}
+
+/** 待发送的图片(base64 编码) */
+data class ChatImage(val base64: String, val mime: String)
 
 /** 一次问答的完整结果 */
 data class ChatResult(val content: String, val reasoning: String? = null)
@@ -64,7 +74,23 @@ class ChatApiClient {
         messages.forEach { m ->
             val o = JsonObject()
             o.addProperty("role", m.role)
-            o.addProperty("content", m.content)
+            if (m.hasImage) {
+                // 多模态:OpenAI 风格 content 数组(text + image_url)
+                val content = JsonArray()
+                val textPart = JsonObject()
+                textPart.addProperty("type", "text")
+                textPart.addProperty("text", m.content)
+                content.add(textPart)
+                val imagePart = JsonObject()
+                imagePart.addProperty("type", "image_url")
+                val imageUrl = JsonObject()
+                imageUrl.addProperty("url", "data:${m.imageMime};base64,${m.imageBase64}")
+                imagePart.add("image_url", imageUrl)
+                content.add(imagePart)
+                o.add("content", content)
+            } else {
+                o.addProperty("content", m.content)
+            }
             msgs.add(o)
         }
         root.add("messages", msgs)
