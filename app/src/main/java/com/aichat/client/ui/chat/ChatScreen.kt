@@ -5,11 +5,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -99,7 +104,12 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            Surface {
+            Surface(
+                modifier = Modifier.windowInsetsPadding(
+                    // 避让系统手势导航条(键盘弹出时自动上移)
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
+                )
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
