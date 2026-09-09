@@ -4,6 +4,7 @@ import com.aichat.client.data.local.AppDatabase
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.remote.ChatApiClient
 import com.aichat.client.data.remote.ChatMessage
+import com.aichat.client.data.remote.ChatResult
 import com.aichat.client.data.settings.ModelConfig
 import com.aichat.client.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.Flow
@@ -42,7 +43,8 @@ class ChatRepository(
         config: ModelConfig,
         question: String,
         onDelta: (String) -> Unit,
-        onComplete: (String) -> Unit,
+        onReasoning: (String) -> Unit,
+        onComplete: (fullText: String, reasoning: String) -> Unit,
         onError: (String) -> Unit
     ): EventSource {
         val now = System.currentTimeMillis()
@@ -60,16 +62,17 @@ class ChatRepository(
         }
 
         val messages = buildContext(sessionId, question, config.contextRounds)
-        return apiClient.streamChat(config, messages, onDelta, onComplete, onError)
+        return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
     }
 
-    /** AI 回复完整入库 */
-    suspend fun saveAssistantMessage(sessionId: Long, content: String) {
+    /** AI 回复完整入库(含思考过程) */
+    suspend fun saveAssistantMessage(sessionId: Long, content: String, reasoning: String? = null) {
         database.messageDao().insert(
             MessageEntity(
                 sessionId = sessionId,
                 role = "assistant",
                 content = content,
+                reasoning = reasoning,
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -81,7 +84,7 @@ class ChatRepository(
         sessionId: Long,
         config: ModelConfig,
         question: String
-    ): Result<String> {
+    ): Result<ChatResult> {
         val now = System.currentTimeMillis()
         database.messageDao().insert(
             MessageEntity(sessionId = sessionId, role = "user", content = question, createdAt = now)

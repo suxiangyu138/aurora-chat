@@ -100,7 +100,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
             _testing.value = false
             _testResult.value = result.fold(
-                onSuccess = { true to "连接成功:\n${it.take(120)}" },
+                onSuccess = { true to "连接成功:\n${it.content.take(120)}" },
                 onFailure = { false to "连接失败:\n${it.message}" }
             )
         }

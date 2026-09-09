@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.aichat.client.ChatApplication
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.local.SessionEntity
+import com.aichat.client.data.settings.ModelConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,10 @@ class ChatViewModel(
     private val _streamingText = MutableStateFlow<String?>(null)
     val streamingText: StateFlow<String?> = _streamingText.asStateFlow()
 
+    /** 流式接收中的思考过程增量;null 表示未在流式输出 */
+    private val _streamingReasoning = MutableStateFlow<String?>(null)
+    val streamingReasoning: StateFlow<String?> = _streamingReasoning.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -49,30 +54,64 @@ class ChatViewModel(
                 _error.value = "请先在设置页填写接口 URL、API Key 和模型名称"
                 return@launch
             }
-            _streamingText.value = ""
-            eventSource = chatRepository.sendMessageStream(
-                sessionId = sessionId,
-                config = config,
-                question = text,
-                onDelta = { delta ->
-                    _streamingText.value = (_streamingText.value ?: "") + delta
-                },
-                onComplete = { full ->
-                    viewModelScope.launch {
-                        if (full.isNotBlank()) {
-                            chatRepository.saveAssistantMessage(sessionId, full)
-                        }
-                        _streamingText.value = null
-                    }
-                },
-                onError = { msg ->
-                    viewModelScope.launch {
-                        _error.value = msg
-                        _streamingText.value = null
-                    }
-                }
-            )
+            if (config.streamEnabled) {
+                startStreaming(config, text)
+            } else {
+                startNonStream(config, text)
+            }
         }
+    }
+
+    private suspend fun startStreaming(config: ModelConfig, text: String) {
+        _streamingText.value = ""
+        _streamingReasoning.value = ""
+        eventSource = chatRepository.sendMessageStream(
+            sessionId = sessionId,
+            config = config,
+            question = text,
+            onDelta = { delta ->
+                _streamingText.value = (_streamingText.value ?: "") + delta
+            },
+            onReasoning = { piece ->
+                _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
+            },
+            onComplete = { full, reasoning ->
+                viewModelScope.launch {
+                    if (full.isNotBlank() || reasoning.isNotBlank()) {
+                        chatRepository.saveAssistantMessage(
+                            sessionId, full, reasoning.ifBlank { null }
+                        )
+                    }
+                    _streamingText.value = null
+                    _streamingReasoning.value = null
+                }
+            },
+            onError = { msg ->
+                viewModelScope.launch {
+                    _error.value = msg
+                    _streamingText.value = null
+                    _streamingReasoning.value = null
+                }
+            }
+        )
+    }
+
+    private suspend fun startNonStream(config: ModelConfig, text: String) {
+        _streamingText.value = ""   // 空串表示等待中(呼吸灯)
+        val result = chatRepository.sendMessageOnce(sessionId, config, text)
+        result.fold(
+            onSuccess = { chatResult ->
+                if (chatResult.content.isNotBlank() || !chatResult.reasoning.isNullOrBlank()) {
+                    chatRepository.saveAssistantMessage(
+                        sessionId, chatResult.content, chatResult.reasoning
+                    )
+                }
+            },
+            onFailure = { e ->
+                _error.value = e.message ?: "请求失败"
+            }
+        )
+        _streamingText.value = null
     }
 
     fun clearMessages() {

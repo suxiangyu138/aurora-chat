@@ -32,5 +32,7 @@ data class MessageEntity(
     val sessionId: Long,
     val role: String,   // "user" / "assistant"
     val content: String,
+    /** 思考过程(DeepSeek-R1/GLM 等模型的 reasoning_content,无则 null) */
+    val reasoning: String? = null,
     val createdAt: Long
 )
