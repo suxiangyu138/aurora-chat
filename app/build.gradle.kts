@@ -1,8 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+}
+
+// 签名密钥配置来自 local.properties(gitignore,不入库)
+val keystoreProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -13,8 +21,20 @@ android {
         applicationId = "com.aichat.client"
         minSdk = 30          // 最低 Android 11,兼容绝大多数 iQOO 机型
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            val path = keystoreProps.getProperty("keystore.path")
+            if (!path.isNullOrBlank()) {
+                storeFile = file(path)
+                storePassword = keystoreProps.getProperty("keystore.password")
+                keyAlias = keystoreProps.getProperty("keystore.alias")
+                keyPassword = keystoreProps.getProperty("keystore.password")
+            }
+        }
     }
 
     buildTypes {
@@ -24,6 +44,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // 本机配置了密钥则签名发布包
+            if (!keystoreProps.getProperty("keystore.path").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
