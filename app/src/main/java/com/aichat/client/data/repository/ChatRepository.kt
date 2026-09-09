@@ -68,6 +68,20 @@ class ChatRepository(
         return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
     }
 
+    /** 断线重连:不重复入库,直接用库中历史(含最后一条用户消息)重发请求 */
+    suspend fun retryStream(
+        sessionId: Long,
+        config: ModelConfig,
+        onDelta: (String) -> Unit,
+        onReasoning: (String) -> Unit,
+        onComplete: (fullText: String, reasoning: String) -> Unit,
+        onError: (String) -> Unit
+    ): EventSource {
+        val history = database.messageDao().getRecent(sessionId, config.contextRounds * 2 + 1)
+        val messages = history.reversed().map { ChatMessage(it.role, it.content) }
+        return apiClient.streamChat(config, messages, onDelta, onReasoning, onComplete, onError)
+    }
+
     /** AI 回复完整入库(含思考过程) */
     suspend fun saveAssistantMessage(sessionId: Long, content: String, reasoning: String? = null) {
         database.messageDao().insert(
