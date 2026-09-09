@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose 应用的最小系统主题(仅用于启动窗口,界面由 Compose 绘制) -->
+    <style name="Theme.AIChat" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
