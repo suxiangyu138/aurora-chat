@@ -2,6 +2,7 @@ package com.aichat.client
 
 import android.app.Application
 import com.aichat.client.data.local.AppDatabase
+import java.util.concurrent.ConcurrentHashMap
 import com.aichat.client.data.remote.ChatApiClient
 import com.aichat.client.data.repository.ChatRepository
 import com.aichat.client.data.repository.SessionRepository
@@ -19,4 +20,7 @@ class ChatApplication : Application() {
     val chatRepository: ChatRepository by lazy {
         ChatRepository(database, chatApiClient, settingsRepository)
     }
+
+    /** 各会话的输入草稿(切页不丢失,进程存活期间有效) */
+    val chatDrafts = ConcurrentHashMap<Long, String>()
 }

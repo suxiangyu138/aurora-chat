@@ -98,10 +98,24 @@ class ChatViewModel(
         _pendingImage.value = null
     }
 
-    fun send(question: String) {
-        val text = question.trim()
+    // ---------- 输入框状态(草稿保留:切页不丢失) ----------
+
+    private val app = getApplication<ChatApplication>()
+
+    private val _input = MutableStateFlow(app.chatDrafts[sessionId].orEmpty())
+    val input: StateFlow<String> = _input.asStateFlow()
+
+    fun updateInput(text: String) {
+        _input.value = text
+        app.chatDrafts[sessionId] = text
+    }
+
+    fun send() {
+        val text = _input.value.trim()
         if (text.isEmpty() && _pendingImage.value == null) return
         if (_streamingText.value != null) return
+        _input.value = ""
+        app.chatDrafts.remove(sessionId)
         viewModelScope.launch {
             val config = chatRepository.getActiveConfig()
             if (config == null || !config.isComplete) {

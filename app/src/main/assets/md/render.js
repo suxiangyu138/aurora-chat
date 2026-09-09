@@ -100,8 +100,9 @@ function setContent(markdownText, textColor, darkTheme) {
   document.getElementById("content").innerHTML = html;
   addCopyButtons();
   reportHeight();
-  // 字体/图片异步加载后高度可能变化,延迟再报一次
+  // 字体/图片/公式异步加载后高度会变化,延迟再报几次
   setTimeout(reportHeight, 200);
+  setTimeout(reportHeight, 600);
 }
 
 /* 为每个代码块附加复制按钮 */
@@ -133,4 +134,19 @@ function reportHeight() {
   if (window.MdBridge) {
     window.MdBridge.onHeight(document.body.scrollHeight);
   }
+}
+
+/* 内容尺寸任何变化(字体加载、图片解码、公式渲染)都自动重新上报高度,
+ * 根治气泡内容显示不全(高度定格导致最后一行被裁切) */
+if (window.ResizeObserver) {
+  new ResizeObserver(function () {
+    reportHeight();
+  }).observe(document.getElementById("content"));
+}
+
+/* Web 字体(KaTeX)加载完成后高度可能变化,补一次上报 */
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(function () {
+    reportHeight();
+  });
 }

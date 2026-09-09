@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -45,7 +46,6 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -86,6 +86,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,6 +95,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.remote.ImageUtils
 import kotlinx.coroutines.launch
+
+/** 输入最大长度(超出提示,不静默截断) */
+private const val MAX_INPUT_LENGTH = 4000
 
 /** 聊天页:消息列表 + 流式打字机输出 + 输入栏 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,8 +118,9 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var input by remember { mutableStateOf("") }
+    val input by viewModel.input.collectAsStateWithLifecycle()
     val isStreaming = streamingText != null
+    val inputOverLimit = input.length > MAX_INPUT_LENGTH
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
@@ -263,10 +268,24 @@ fun ChatScreen(
                         }
                         OutlinedTextField(
                             value = input,
-                            onValueChange = { input = it },
+                            onValueChange = { viewModel.updateInput(it) },
                             modifier = Modifier.weight(1f),
                             placeholder = { Text("输入消息…") },
-                            maxLines = 4
+                            maxLines = 6,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = ImeAction.Send
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSend = { viewModel.send() }
+                            ),
+                            supportingText = if (inputOverLimit) {
+                                {
+                                    Text(
+                                        "超出最大长度 ${input.length}/$MAX_INPUT_LENGTH",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            } else null
                         )
                         Spacer(Modifier.width(8.dp))
                         if (isStreaming) {
@@ -282,11 +301,8 @@ fun ChatScreen(
                             }
                         } else {
                             FilledIconButton(
-                                onClick = {
-                                    viewModel.send(input)
-                                    input = ""
-                                },
-                                enabled = input.isNotBlank() || pendingImage != null
+                                onClick = { viewModel.send() },
+                                enabled = (input.isNotBlank() || pendingImage != null) && !inputOverLimit
                             ) {
                                 Icon(Icons.Default.Send, contentDescription = "发送")
                             }
@@ -438,10 +454,6 @@ private fun MessageItem(
                 )
             }
         }
-        if (isUser) {
-            Spacer(Modifier.width(6.dp))
-            UserAvatar()
-        }
     }
 }
 
@@ -496,6 +508,23 @@ private fun MessageBubble(
                     }
                 }
             } else {
+                // 图片独立展示(多模态消息)
+                val imageB64 = message.imageBase64
+                if (!imageB64.isNullOrBlank()) {
+                    val imageBitmap = remember(message.id) {
+                        ImageUtils.base64ToBitmap(imageB64)
+                    }
+                    imageBitmap?.let {
+                        Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "消息图片",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                }
                 // 思考过程:可展开/收起(流式中默认展开,历史消息默认收起)
                 val reasoning = if (streaming) streamingReasoning else message.reasoning.orEmpty()
                 if (reasoning.isNotBlank()) {
@@ -540,25 +569,6 @@ private fun AssistantAvatar() {
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(16.dp)
-        )
-    }
-}
-
-/** 用户头像:主色圆 + 人形 */
-@Composable
-private fun UserAvatar() {
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            Icons.Default.Person,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(18.dp)
         )
     }
 }
