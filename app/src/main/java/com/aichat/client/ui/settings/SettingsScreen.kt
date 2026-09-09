@@ -1,7 +1,10 @@
 package com.aichat.client.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,6 +37,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +52,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -55,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aichat.client.data.settings.ModelConfig
 import com.aichat.client.data.settings.ModelPresets
+import com.aichat.client.data.settings.ThemeMode
 
 /** 设置页:多套模型配置管理 + 数值参数输入 + 预设模板 + 测试连接 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +79,8 @@ fun SettingsScreen(
     val form by viewModel.form.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val accentArgb by viewModel.accentArgb.collectAsStateWithLifecycle()
     var apiKeyVisible by remember { mutableStateOf(false) }
     var presetMenuOpen by remember { mutableStateOf(false) }
 
@@ -268,6 +281,53 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // ---------- 外观 ----------
+            Text("外观", style = MaterialTheme.typography.titleMedium)
+
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val modes = ThemeMode.entries
+                modes.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = themeMode == mode,
+                        onClick = { viewModel.setThemeMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size)
+                    ) {
+                        Text(
+                            when (mode) {
+                                ThemeMode.SYSTEM -> "跟随系统"
+                                ThemeMode.LIGHT -> "浅色"
+                                ThemeMode.DARK -> "深色"
+                            }
+                        )
+                    }
+                }
+            }
+
+            Text("主题色", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                AccentPresets.forEach { (name, color) ->
+                    val selected = color.toArgb() == accentArgb
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(
+                                width = if (selected) 3.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.outlineVariant,
+                                shape = CircleShape
+                            )
+                            .clickable { viewModel.setAccent(color.toArgb()) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Text("✓", color = Color.White)
+                        }
+                    }
+                }
+            }
+
             // ---------- 操作按钮 ----------
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -314,6 +374,17 @@ fun SettingsScreen(
         )
     }
 }
+
+/** 主题色预设 */
+private val AccentPresets = listOf(
+    "靛蓝" to Color(0xFF3F51B5),
+    "海洋蓝" to Color(0xFF1976D2),
+    "青绿" to Color(0xFF009688),
+    "翠绿" to Color(0xFF43A047),
+    "橙" to Color(0xFFF57C00),
+    "玫粉" to Color(0xFFD81B60),
+    "紫" to Color(0xFF8E24AA)
+)
 
 /** 浮点输入框:本地文本状态,仅合法且在范围内时提交,防止 NaN/越界参数 */
 @Composable

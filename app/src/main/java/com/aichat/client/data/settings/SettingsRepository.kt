@@ -2,6 +2,7 @@ package com.aichat.client.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+/** 深色模式三态 */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 // DataStore:轻量化键值存储,存模型配置(多套配置以 JSON 数组保存)
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
@@ -19,6 +23,37 @@ class SettingsRepository(private val context: Context) {
     private val gson = Gson()
     private val KEY_CONFIGS = stringPreferencesKey("model_configs")
     private val KEY_ACTIVE_ID = stringPreferencesKey("active_config_id")
+    private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+    private val KEY_ACCENT = intPreferencesKey("accent_color")
+
+    // ---------- 主题设置 ----------
+
+    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+        when (prefs[KEY_THEME_MODE]) {
+            "light" -> ThemeMode.LIGHT
+            "dark" -> ThemeMode.DARK
+            else -> ThemeMode.SYSTEM
+        }
+    }
+
+    /** 主题色 ARGB(默认靛蓝 0xFF3F51B5) */
+    val accentColor: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ACCENT] ?: 0xFF3F51B5.toInt()
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_THEME_MODE] = when (mode) {
+                ThemeMode.SYSTEM -> "system"
+                ThemeMode.LIGHT -> "light"
+                ThemeMode.DARK -> "dark"
+            }
+        }
+    }
+
+    suspend fun setAccentColor(argb: Int) {
+        context.dataStore.edit { prefs -> prefs[KEY_ACCENT] = argb }
+    }
 
     // ---------- 解析(手写反序列化:老版本保存的数据缺新字段时取默认值) ----------
 

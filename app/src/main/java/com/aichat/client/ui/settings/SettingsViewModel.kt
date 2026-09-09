@@ -7,6 +7,7 @@ import com.aichat.client.ChatApplication
 import com.aichat.client.data.remote.ChatMessage
 import com.aichat.client.data.settings.ModelConfig
 import com.aichat.client.data.settings.ModelPresets
+import com.aichat.client.data.settings.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** 表单状态(正在编辑的配置;空 id 表示新建) */
     private val _form = MutableStateFlow(ModelConfig())
     val form: StateFlow<ModelConfig> = _form.asStateFlow()
+
+    // ---------- 外观设置 ----------
+
+    val themeMode: StateFlow<ThemeMode> = settingsRepository.themeMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+
+    val accentArgb: StateFlow<Int> = settingsRepository.accentColor
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0xFF3F51B5.toInt())
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settingsRepository.setThemeMode(mode) }
+    }
+
+    fun setAccent(argb: Int) {
+        viewModelScope.launch { settingsRepository.setAccentColor(argb) }
+    }
 
     private val _testing = MutableStateFlow(false)
     val testing: StateFlow<Boolean> = _testing.asStateFlow()

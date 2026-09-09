@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,7 @@ import java.util.Locale
 fun HomeScreen(
     onOpenSession: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -60,6 +62,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("AI Chat") },
                 actions = {
+                    IconButton(onClick = onOpenAbout) {
+                        Icon(Icons.Default.Info, contentDescription = "关于与开发者信息")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "模型配置")
                     }
