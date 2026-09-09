@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -165,10 +166,15 @@ fun ChatScreen(
     }
 }
 
-/** 消息气泡:用户右侧主色,AI 左侧灰色;流式时带光标 */
+/** 消息气泡:用户右侧主色,AI 左侧灰色;Markdown + LaTeX 渲染,流式时带光标 */
 @Composable
 private fun MessageBubble(message: MessageEntity, streaming: Boolean = false) {
     val isUser = message.role == "user"
+    val darkTheme = isSystemInDarkTheme()
+    // 用户气泡底色为主色,文字固定白色;AI 气泡跟随系统深浅色
+    val textColorCss = if (isUser) "#FFFFFF"
+    else if (darkTheme) "#E6E1E5" else "#1C1B1F"
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -179,11 +185,13 @@ private fun MessageBubble(message: MessageEntity, streaming: Boolean = false) {
             contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurfaceVariant,
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.widthIn(max = 300.dp)
+            modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Text(
-                text = message.content + if (streaming) "▌" else "",
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            MarkdownView(
+                content = message.content + if (streaming) " ▌" else "",
+                textColorCss = textColorCss,
+                darkTheme = darkTheme,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
     }
