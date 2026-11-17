@@ -21,8 +21,8 @@ android {
         applicationId = "com.aichat.client"
         minSdk = 30          // 最低 Android 11,兼容绝大多数 iQOO 机型
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.4.0"
+        versionCode = 4
+        versionName = "1.4.1"
     }
 
     signingConfigs {

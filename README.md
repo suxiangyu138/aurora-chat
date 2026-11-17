@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](#兼容性)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Version](https://img.shields.io/badge/release-v1.0.0-6366F1)](https://github.com/suxiangyu138/aurora-chat/releases)
+[![Version](https://img.shields.io/badge/release-v1.4.1-6366F1)](https://gitee.com/suxiangyu138/aurora-chat/releases)
 [![Backend](https://img.shields.io/badge/服务端-无-0D9488)](#隐私与安全)
 
 [下载安装](#下载安装) · [零基础教程](#零基础使用教程) · [从源码构建](#从源码构建) · [隐私与安全](#隐私与安全) · [架构](#架构)
