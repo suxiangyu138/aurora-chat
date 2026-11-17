@@ -68,7 +68,7 @@ Aurora Chat 是一款**通用型自定义大模型聊天客户端**:接口 URL�
 
 ### 下载安装
 
-前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载最新 `AuroraChat-vX.X.X.apk`,手机安装(需在系统设置里允许安装未知来源应用)。
+前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载最新 `AuroraChat-vX.X.X.apk`,手机安装(需在系统设置里允许安装未知来源应用)。Gitee 用户可从 [Gitee 发行版](https://gitee.com/suxiangyu138/aurora-chat/releases) 获取同一安装包。
 
 ### 三步接入
 
@@ -185,13 +185,14 @@ app/src/main/
 
 ## 许可
 
-个人项目,保留所有权利。代码仅供学习交流,请勿用于商业分发。
+本项目采用 [MIT License](LICENSE) 开源,可自由使用、修改、分发,包括商业用途,仅需保留版权与许可声明。
 
 ## 作者
 
 **苏巷雨** · 独立开发者(Android / Kotlin)
 
 - GitHub:[@suxiangyu138](https://github.com/suxiangyu138)
+- Gitee:[@suxiangyu138](https://gitee.com/suxiangyu138)
 - 邮箱:[suxiangyu_dev@foxmail.com](mailto:suxiangyu_dev@foxmail.com)
 
 <div align="center">
