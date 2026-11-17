@@ -272,6 +272,6 @@ app/src/main/
 
 Kotlin · Jetpack Compose · Material 3
 
-© 2026 苏巷雨 · 保留所有权利
+© 2026 苏巷雨 · MIT License
 
 </div>
