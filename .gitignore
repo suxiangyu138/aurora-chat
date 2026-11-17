@@ -22,3 +22,7 @@ desktop.ini
 # 日志与临时文件
 *.log
 temp/
+
+# 本地工具配置(记录本机绝对路径与已授权命令,可能含签名口令,严禁入库)
+# 不能只依赖全局 gitignore:换机器 clone 后该保护即失效
+.claude/settings.local.json

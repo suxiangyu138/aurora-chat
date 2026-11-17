@@ -198,6 +198,8 @@ fun SettingsScreen(
                 label = { Text("API Key") },
                 placeholder = { Text("sk-…") },
                 singleLine = true,
+                // 密码键盘类型:让输入法/自动填充按敏感字段处理,不进云同步词库
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 visualTransformation = if (apiKeyVisible) VisualTransformation.None
                 else PasswordVisualTransformation(),
                 trailingIcon = {

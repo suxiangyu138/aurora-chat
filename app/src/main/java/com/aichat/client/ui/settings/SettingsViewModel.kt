@@ -11,12 +11,14 @@ import com.aichat.client.data.remote.ChatMessage
 import com.aichat.client.data.settings.ModelConfig
 import com.aichat.client.data.settings.ModelPresets
 import com.aichat.client.data.settings.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -141,15 +143,35 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _backupResult = MutableStateFlow<Pair<Boolean, String>?>(null)
     val backupResult: StateFlow<Pair<Boolean, String>?> = _backupResult.asStateFlow()
 
+    /** 备份目录:导出文件含明文 API Key,必须用完尽快清理 */
+    private fun backupDir(app: Application) = File(app.cacheDir, "backup")
+
+    /** 清掉历史备份文件(上次导出残留、或用户在分享面板直接取消的情况) */
+    private fun clearBackupCache(app: Application) {
+        runCatching { backupDir(app).listFiles()?.forEach { it.delete() } }
+    }
+
+    init {
+        // 进入设置页先清一次:上次导出的明文密钥不应跨会话留在磁盘上
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { clearBackupCache(app) }
+    }
+
     fun exportConfigs() {
         viewModelScope.launch {
             val app = getApplication<Application>()
-            val file = File(app.cacheDir, "backup/configs_backup.json")
-            runCatching {
-                file.parentFile?.mkdirs()
-                file.writeText(settingsRepository.exportConfigs())
-            }.onSuccess {
-                val uri = FileProvider.getUriForFile(app, "com.aichat.client.fileprovider", file)
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    // 文件名带时间戳:固定路径会让曾被授权的应用在授权存续期内反复读到新备份
+                    val dir = backupDir(app)
+                    clearBackupCache(app)
+                    dir.mkdirs()
+                    File(dir, "configs_backup_${System.currentTimeMillis()}.json")
+                        .apply { writeText(settingsRepository.exportConfigs()) }
+                }
+            }
+            file.onSuccess {
+                val uri = FileProvider.getUriForFile(app, "com.aichat.client.fileprovider", it)
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "application/json"
                     putExtra(Intent.EXTRA_STREAM, uri)
