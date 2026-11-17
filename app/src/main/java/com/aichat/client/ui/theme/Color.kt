@@ -13,7 +13,7 @@ val Indigo500 = Color(0xFF3F51B5)
 val Indigo700 = Color(0xFF303F9F)
 val IndigoGrey40 = Color(0xFF5C6BC0)
 
-// 极光渐变:与应用图标 res/drawable/ic_launcher_background.xml 保持一致
+// 极光渐变:关于页标题与头像等品牌辅助色
 val AuroraTeal = Color(0xFF0D9488)
 val AuroraIndigo = Color(0xFF6366F1)
 val AuroraMagenta = Color(0xFFC026D3)

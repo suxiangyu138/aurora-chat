@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Star
@@ -72,8 +73,11 @@ private const val DEV_GITHUB = "suxiangyu138"
 private const val REPO_PATH = "$DEV_GITHUB/aurora-chat"
 private const val GITHUB_URL = "https://github.com/$DEV_GITHUB"
 private const val REPO_URL = "https://github.com/$REPO_PATH"
+private const val DEV_GITEE = "suxiangyu138"
+private const val GITEE_REPO_PATH = "$DEV_GITEE/aurora-chat"
+private const val GITEE_REPO_URL = "https://gitee.com/$GITEE_REPO_PATH"
 
-/** 极光渐变(图标/标题/头像共用一套,视觉上与桌面图标同源) */
+/** 极光渐变(标题/头像共用一套,延续品牌主色) */
 private val AuroraBrush = Brush.linearGradient(
     listOf(AuroraTeal, AuroraIndigo, AuroraMagenta)
 )
@@ -207,7 +211,10 @@ fun AboutScreen(onBack: () -> Unit) {
                         }
                     }
                     InfoRow(Icons.Outlined.Code, "GitHub", "@$DEV_GITHUB") { openWeb(GITHUB_URL) }
-                    InfoRow(Icons.Outlined.Star, "开源仓库", REPO_PATH) { openWeb(REPO_URL) }
+                    InfoRow(Icons.Outlined.Star, "GitHub 仓库", REPO_PATH) { openWeb(REPO_URL) }
+                    InfoRow(Icons.Outlined.Public, "Gitee 仓库", GITEE_REPO_PATH) {
+                        openWeb(GITEE_REPO_URL)
+                    }
                     InfoRow(Icons.Outlined.Smartphone, "深度适配", "iQOO 全系(OriginOS)")
                 }
             }
@@ -244,7 +251,7 @@ fun AboutScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "© 2026 $DEV_NAME · 保留所有权利",
+                "© 2026 $DEV_NAME · MIT License 开源",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -254,10 +261,10 @@ fun AboutScreen(onBack: () -> Unit) {
 }
 
 /**
- * 应用图标:直接叠加自适应图标的两层(背景 + 前景),与桌面图标同源 ——
- * 不要再用 drawable/ic_launcher(那是通知栏用的 24dp 单色图标,和桌面图标是两回事)。
- * 两层整体放大 1.5 倍是还原 108→72 的自适应裁切比例:桌面只显示中心 72x72 区域,
- * 不放大则前景小一圈、背景渐变还会多露出一段边角色,和桌面看着不像同一个图标。
+ * 应用图标:自适应图标背景层现在是整张位图,与桌面图标同源 ——
+ * 不要用 drawable/ic_launcher(那是通知栏用的 24dp 单色小图标)。
+ * 整层放大 1.5 倍是还原 108→72 的裁切比例:桌面只显示中心 72x72 区域,
+ * 不放大则显示范围偏大,和桌面图标不是同一个构图。
  */
 @Composable
 private fun AppIcon(size: Dp) {
@@ -265,11 +272,6 @@ private fun AppIcon(size: Dp) {
         Box(Modifier.size(size).scale(1.5f)) {
             Image(
                 painter = painterResource(R.drawable.ic_launcher_background),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-            Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
                 contentDescription = "应用图标",
                 modifier = Modifier.fillMaxSize()
             )
