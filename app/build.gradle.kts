@@ -21,8 +21,8 @@ android {
         applicationId = "com.aichat.client"
         minSdk = 30          // 最低 Android 11,兼容绝大多数 iQOO 机型
         targetSdk = 36
-        versionCode = 5
-        versionName = "2.0.0"
+        versionCode = 22
+        versionName = "2.0.1"
     }
 
     signingConfigs {
@@ -38,6 +38,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 本机配置了发行密钥时,debug 也用同一密钥签名:
+            // 这样测试包可以直接覆盖已发行的正式版,不必每次卸载重装
+            if (!keystoreProps.getProperty("keystore.path").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             // 发行包开裁剪:R8 去未用代码 + 资源裁剪,实测可从 60MB+ 降到个位数
             isMinifyEnabled = true

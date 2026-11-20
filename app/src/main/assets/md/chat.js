@@ -125,7 +125,7 @@ function wrapTables(root) {
   }
 }
 
-function renderMarkdown(text) {
+function renderMarkdownInner(text) {
   var items = [];
   var guards = [];
   var tables = [];
@@ -310,6 +310,14 @@ function reportScroll() {
 window.addEventListener("scroll", reportScroll);
 window.addEventListener("resize", reportScroll);
 
+function renderMarkdown(text) {
+  try {
+    return renderMarkdownInner(text);
+  } catch (e) {
+    return '<pre class="render-fallback">' + md.utils.escapeHtml(String(text == null ? "" : text)) + '</pre>';
+  }
+}
+
 /* ---------- Mermaid ---------- */
 
 var mermaidReady = typeof mermaid !== "undefined";
@@ -320,9 +328,144 @@ if (mermaidReady) {
       startOnLoad: false,
       securityLevel: "loose",
       theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
-      fontFamily: "inherit"
+      fontFamily: "inherit",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+      class: { htmlLabels: false },
+      state: { htmlLabels: false }
     });
   } catch (e) { mermaidReady = false; }
+}
+
+/** 中文或带空格的标签在 Mermaid 里必须加引号,否则整块图解析失败 */
+function sanitizeMermaid(text) {
+  var lines = String(text || "").split("\n");
+  var type = "";
+  function quoteLabel(label) {
+    var v = String(label || "").trim();
+    if (!v) return '""';
+    if (/^".*"$/.test(v)) return v;
+    return '"' + v.replace(/"/g, "'") + '"';
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var t = line.trim();
+    if (!type && t && t.indexOf("%%") !== 0) type = t.split(/\s+/)[0];
+    if (type === "erDiagram" && /(--|\.\.)/.test(line)) {
+      line = line.replace(/:\s*([^"].*?)\s*$/, function (m, label) {
+        return ": " + quoteLabel(label);
+      });
+    } else if (type === "classDiagram" &&
+      /(<\|--|-->|\.\.>|--\|>|\.\.\|>|--\*|--o)/.test(line)) {
+      line = line.replace(/:\s*([^"].*?)\s*$/, function (m, label) {
+        return ": " + quoteLabel(label);
+      });
+    } else if (type === "quadrantChart") {
+      if (/^\s*[xy]-axis\s+/.test(line)) {
+        line = line.replace(/^(\s*[xy]-axis\s+)(.*?)\s*-->\s*(.*?)\s*$/,
+          function (m, pre, a, b) { return pre + quoteLabel(a) + " --> " + quoteLabel(b); });
+      } else if (/^\s*quadrant-\d\s+/.test(line)) {
+        line = line.replace(/^(\s*quadrant-\d\s+)(.*?)\s*$/,
+          function (m, pre, label) { return pre + quoteLabel(label); });
+      }
+    }
+    lines[i] = line;
+  }
+  return lines.join("\n");
+}
+
+/* SVG 转 PNG:展示用 <img>,尺寸由浏览器按图片比例自动算,
+ * 绕开 WebView 对 SVG 高度计算不可靠的问题;同时把 PNG 交给原生层做全屏缩放。 */
+function rasterizeDiagram(div, svg, src) {
+  try {
+    var vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+    var vbW = vb.length === 4 && vb[2] > 0 ? vb[2] : 0;
+    var vbH = vb.length === 4 && vb[3] > 0 ? vb[3] : 0;
+    if (!vbW || !vbH) return false;
+    var clone = svg.cloneNode(true);
+    var scale = Math.min(3, Math.max(1.5, 1000 / vbW));
+    var w = Math.round(vbW * scale);
+    var h = Math.round(vbH * scale);
+    clone.setAttribute("width", w);
+    clone.setAttribute("height", h);
+    if (!clone.getAttribute("xmlns")) {
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    }
+    var xml = new XMLSerializer().serializeToString(clone);
+    var blobUrl = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        var data = canvas.toDataURL("image/png");
+        var out = document.createElement("img");
+        out.className = "mermaid-img";
+        out.src = data;
+        // 聊天里按 0.6 倍显示,避免复杂图撑得太宽;细节交给全屏放大
+        var displayW = Math.max(36, Math.round(w * 0.12));
+        out.style.width = displayW + "px";
+        out.style.maxWidth = "none";
+        out.style.height = "auto";
+        out.alt = "Mermaid 图表";
+        out.onclick = function () {
+          if (window.MdBridge && window.MdBridge.openDiagramImage) {
+            window.MdBridge.openDiagramImage(data);
+          }
+        };
+        div.innerHTML = "";
+        div.appendChild(out);
+      } catch (e) {
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(blobUrl);
+    };
+    img.src = blobUrl;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* 让图表容器跟着 SVG 真正长高:WebView 里 SVG 的百分比高度经常算成 0,
+ * 容器又是一个横向滚动盒子,结果图被裁在一条很矮的框里。这里用 getBBox()
+ * 取图形真实比例,写死像素宽高,并同步设置容器高度。 */
+function fitDiagramBox(div, svg) {
+  setTimeout(function () {
+    if (!div.parentNode || !svg) return;
+    var ratio = 0.6;
+    try {
+      var bb = svg.getBBox();
+      if (bb && bb.width > 0 && bb.height > 0) ratio = bb.height / bb.width;
+    } catch (e) { /* 忽略,用 viewBox 兜底 */ }
+    if (ratio <= 0.05) {
+      var vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) ratio = vb[3] / vb[2];
+    }
+    var cw = div.clientWidth || div.offsetWidth || 320;
+    var maxW = Math.max(160, cw - 16);
+    var maxH = Math.max(200, window.innerHeight * 0.65);
+    var w = maxW;
+    var h = w * ratio;
+    if (h > maxH) {
+      h = maxH;
+      w = h / ratio;
+    }
+    w = Math.round(w);
+    h = Math.round(h);
+    svg.setAttribute("width", w);
+    svg.setAttribute("height", h);
+    svg.style.width = w + "px";
+    svg.style.height = h + "px";
+    svg.style.maxWidth = "100%";
+    div.style.height = (h + 16) + "px";
+  }, 250);
 }
 
 function renderMermaid(root) {
@@ -332,21 +475,35 @@ function renderMermaid(root) {
     var pre = code.parentNode;
     if (!pre || pre.dataset.rendered === "1") return;
     pre.dataset.rendered = "1";
-    var src = code.textContent;
+    var src = sanitizeMermaid(code.textContent);
     var id = "mmd" + (++mermaidSeq);
     try {
       Promise.resolve(mermaid.render(id, src)).then(function (res) {
+        var svg = res && res.svg ? res.svg : (typeof res === "string" ? res : "");
+        if (!svg) throw new Error("empty");
         var div = document.createElement("div");
         div.className = "mermaid-diagram";
-        div.innerHTML = res.svg || "";
+        div.innerHTML = svg;
+        div.querySelectorAll("text, tspan").forEach(function (el) {
+          var t = el.textContent || "";
+          if (t.indexOf("&") < 0) return;
+          var decoded = t
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&");
+          // 为兼容 Mermaid 语法自动加的引号不必显示出来
+          if (/^"[^"]*"$/.test(decoded)) decoded = decoded.slice(1, -1);
+          el.textContent = decoded;
+        });
         div.dataset.src = src;
-        div.onclick = function () {
-          var svg = div.querySelector("svg");
-          if (svg) openDiagramZoom(svg);
-        };
         if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
-      }).catch(function () {
-        // 语法未闭合(流式中间态)或写法错误:保留源码,不打断整页渲染
+        var svgEl = div.querySelector("svg");
+        if (!rasterizeDiagram(div, svgEl, src) && svgEl) {
+          fitDiagramBox(div, svgEl);
+        }
+      }).catch(function (err) {
         pre.dataset.rendered = "error";
         var tip = document.createElement("div");
         tip.className = "mermaid-error";
@@ -357,96 +514,97 @@ function renderMermaid(root) {
   });
 }
 
-/* ---------- 图表全屏放大(双指缩放 / 单指拖动) ---------- */
-var zoomOverlay = null;
-var zoomState = { scale: 1, x: 0, y: 0 };
+/* ---------- 图表原位缩放:点一下进入,双指缩放/单指拖动,再点一下复位 ---------- */
+var activeDiagram = null;
+var dState = { scale: 1, x: 0, y: 0, lastDist: 0, lastX: 0, lastY: 0 };
 
-function closeDiagramZoom() {
-  if (zoomOverlay && zoomOverlay.parentNode) zoomOverlay.parentNode.removeChild(zoomOverlay);
-  zoomOverlay = null;
+function diagramDistance(e) {
+  return Math.hypot(
+    e.touches[0].clientX - e.touches[1].clientX,
+    e.touches[0].clientY - e.touches[1].clientY
+  );
 }
 
-function openDiagramZoom(svg) {
-  closeDiagramZoom();
-  zoomState = { scale: 1, x: 0, y: 0 };
-  var overlay = document.createElement("div");
-  overlay.className = "zoom-overlay";
-  var box = document.createElement("div");
-  box.className = "zoom-content";
-  box.appendChild(svg.cloneNode(true));
-  overlay.appendChild(box);
+function applyDiagramTransform(host) {
+  var svg = host.querySelector("svg");
+  if (!svg) return;
+  svg.style.transformOrigin = "center center";
+  svg.style.transform = "translate(" + dState.x + "px," + dState.y + "px) scale(" +
+    dState.scale + ")";
+}
 
-  var close = document.createElement("button");
-  close.className = "zoom-close";
-  close.textContent = "✕";
-  close.onclick = closeDiagramZoom;
-  overlay.appendChild(close);
+function resetDiagramZoom() {
+  if (!activeDiagram) return;
+  var host = activeDiagram;
+  activeDiagram = null;
+  host.classList.remove("diagram-zoomed");
+  var svg = host.querySelector("svg");
+  if (svg) {
+    svg.style.transform = "";
+    svg.style.transformOrigin = "";
+  }
+  var hint = host.querySelector(".diagram-zoom-hint");
+  if (hint) hint.parentNode.removeChild(hint);
+  if (host._zoomHandlers) {
+    host.removeEventListener("touchstart", host._zoomHandlers.start);
+    host.removeEventListener("touchmove", host._zoomHandlers.move);
+    host.removeEventListener("touchend", host._zoomHandlers.end);
+    host._zoomHandlers = null;
+  }
+}
 
-  var tip = document.createElement("div");
-  tip.className = "zoom-tip";
-  tip.textContent = "双指缩放 · 单指拖动 · 点击空白关闭";
-  overlay.appendChild(tip);
+function toggleDiagramZoom(host) {
+  if (activeDiagram === host) {
+    resetDiagramZoom();
+    return;
+  }
+  resetDiagramZoom();
+  activeDiagram = host;
+  dState = { scale: 1, x: 0, y: 0, lastDist: 0, lastX: 0, lastY: 0 };
+  host.classList.add("diagram-zoomed");
 
-  function apply() {
-    box.style.transform = "translate(" + zoomState.x + "px," + zoomState.y + "px) scale(" +
-      zoomState.scale + ")";
+  var hint = document.createElement("div");
+  hint.className = "diagram-zoom-hint";
+  hint.textContent = "双指缩放 · 拖动平移 · 单击复位";
+  host.appendChild(hint);
+
+  function start(e) {
+    if (e.touches.length === 2) {
+      dState.lastDist = diagramDistance(e);
+    } else if (e.touches.length === 1) {
+      dState.lastX = e.touches[0].clientX;
+      dState.lastY = e.touches[0].clientY;
+    }
+    e.preventDefault();
   }
 
-  var pointers = {};
-  var lastDist = 0;
-  var lastCenter = null;
-
-  overlay.addEventListener("touchstart", function (e) {
-    if (e.target === overlay || e.target === close) return;
+  function move(e) {
+    host._lastGestureAt = Date.now();
     if (e.touches.length === 2) {
-      lastDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      lastCenter = {
-        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-      };
-    } else if (e.touches.length === 1) {
-      pointers.x = e.touches[0].clientX;
-      pointers.y = e.touches[0].clientY;
-    }
-    e.preventDefault();
-  }, { passive: false });
-
-  overlay.addEventListener("touchmove", function (e) {
-    if (e.touches.length === 2) {
-      var dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      if (lastDist > 0) {
-        zoomState.scale = Math.min(6, Math.max(1, zoomState.scale * dist / lastDist));
-        lastDist = dist;
-        apply();
+      var dist = diagramDistance(e);
+      if (dState.lastDist > 0) {
+        dState.scale = Math.min(6, Math.max(1, dState.scale * dist / dState.lastDist));
+        dState.lastDist = dist;
+        applyDiagramTransform(host);
       }
-    } else if (e.touches.length === 1 && !lastDist) {
-      var dx = e.touches[0].clientX - pointers.x;
-      var dy = e.touches[0].clientY - pointers.y;
-      pointers.x = e.touches[0].clientX;
-      pointers.y = e.touches[0].clientY;
-      zoomState.x += dx;
-      zoomState.y += dy;
-      apply();
+    } else if (e.touches.length === 1 && dState.scale > 1) {
+      dState.x += e.touches[0].clientX - dState.lastX;
+      dState.y += e.touches[0].clientY - dState.lastY;
+      dState.lastX = e.touches[0].clientX;
+      dState.lastY = e.touches[0].clientY;
+      applyDiagramTransform(host);
     }
     e.preventDefault();
-  }, { passive: false });
+  }
 
-  overlay.addEventListener("touchend", function (e) {
-    if (e.touches.length === 0) { lastDist = 0; lastCenter = null; }
-  });
+  function end(e) {
+    if (e.touches.length === 0) dState.lastDist = 0;
+  }
 
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) closeDiagramZoom();
-  });
-
-  document.body.appendChild(overlay);
-  zoomOverlay = overlay;
+  host.addEventListener("touchstart", start, { passive: false });
+  host.addEventListener("touchmove", move, { passive: false });
+  host.addEventListener("touchend", end);
+  host._zoomHandlers = { start: start, move: move, end: end };
 }
 
 /* ---------- 消息渲染 ---------- */
@@ -499,16 +657,20 @@ function messageHtml(m) {
     if (f && f.name) inner += '<div class="file-chip">📄 ' + esc(f.name) + '</div>';
   });
 
-  // 图片:优先多图 JSON,兼容旧版单图字段
+  // 图片:优先多图 JSON,兼容旧版单图字段;统一缩略图展示,点击看大图
   var imgs = [];
   try { imgs = m.imagesJson ? JSON.parse(m.imagesJson) : []; } catch (e) { imgs = []; }
   if ((!imgs || !imgs.length) && m.image) imgs = [{ base64: m.image, mime: "image/jpeg" }];
-  (imgs || []).forEach(function (img, idx) {
-    if (!img || !img.base64) return;
-    var mime = img.mime || "image/jpeg";
-    inner += '<img class="msg-image" src="data:' + mime + ';base64,' + img.base64 +
-      '" alt="图片" onclick="openImage(\'' + m.id + '\', ' + idx + ')">';
-  });
+  if (imgs && imgs.length) {
+    var imgsHtml = "";
+    imgs.forEach(function (img, idx) {
+      if (!img || !img.base64) return;
+      var mime = img.mime || "image/jpeg";
+      imgsHtml += '<img class="msg-image" src="data:' + mime + ';base64,' + img.base64 +
+        '" alt="图片" onclick="openImage(\'' + m.id + '\', ' + idx + ')">';
+    });
+    if (imgsHtml) inner += '<div class="msg-images">' + imgsHtml + '</div>';
+  }
   if (m.reasoning) inner += reasoningBlock(m.reasoning, false);
   if (isError) {
     inner += '<div class="content">' + esc(m.content) + '</div>';
@@ -569,6 +731,8 @@ function messageActions(m) {
 
 var streamingText = "";
 var streamingReasoning = "";
+/* 流式渲染代际:收尾后取消尚未执行的帧回调,防止又建出一个空流式行 */
+var streamGen = 0;
 var renderScheduled = false;
 /* 流式已结束、等正式消息入库回来后再摘掉流式行(见 clearStreaming) */
 var streamPendingClear = false;
@@ -606,20 +770,53 @@ function renderStreaming() {
     // 挂在 #stream 里:setMessages 只重写 #chat,流式行不会被擦掉
     streamEl.appendChild(row);
   }
-  var inner = "";
-  if (!streamPendingClear) inner += '<span class="streaming-dot"></span>';
-  if (streamingReasoning) inner += reasoningBlock(streamingReasoning, true);
-  inner += '<div class="content">' + renderMarkdown(streamingText) + '</div>';
   var bubble = row.querySelector(".bubble");
-  bubble.innerHTML = inner;
+
+  // 呼吸点
+  var dot = bubble.querySelector(".streaming-dot");
+  if (!streamPendingClear) {
+    if (!dot) {
+      dot = document.createElement("span");
+      dot.className = "streaming-dot";
+      bubble.insertBefore(dot, bubble.firstChild);
+    }
+  } else if (dot) {
+    dot.parentNode.removeChild(dot);
+  }
+
+  // 思考过程:只更新文本,不再每帧重建
+  var rBlock = bubble.querySelector(".reasoning");
+  if (streamingReasoning) {
+    if (!rBlock) {
+      rBlock = document.createElement("div");
+      rBlock.className = "reasoning";
+      rBlock.innerHTML = '<div class="reasoning-header" onclick="toggleReasoning(this)">' +
+        '思考过程 <span class="arrow">\u25be</span></div><div class="reasoning-body"></div>';
+      bubble.appendChild(rBlock);
+    }
+    var body = rBlock.querySelector(".reasoning-body");
+    if (body) body.textContent = streamingReasoning;
+  } else if (rBlock) {
+    rBlock.parentNode.removeChild(rBlock);
+  }
+
+  // 正文:只重写内容块
+  var contentEl = bubble.querySelector(".content");
+  if (!contentEl) {
+    contentEl = document.createElement("div");
+    contentEl.className = "content";
+    bubble.appendChild(contentEl);
+  }
+  contentEl.innerHTML = renderMarkdown(streamingText);
   addCopyButtons(bubble);
-  if (!streamPendingClear) appendCaret(bubble.querySelector(".content"));
+  if (!streamPendingClear) appendCaret(contentEl);
   if (wasPinned) scrollToBottom(false);
   reportScroll();
 }
 
 /* 全量重置流式内容:开流、页面重载后恢复、文本回退时用(增量对不上就走这条) */
 function resetStreaming(text, reasoning) {
+  streamGen++;
   if (streamClearTimer) {
     clearTimeout(streamClearTimer);
     streamClearTimer = null;
@@ -636,10 +833,15 @@ function updateStreaming(textDelta, reasoningDelta) {
   streamingReasoning += (reasoningDelta || "");
   if (renderScheduled) return;
   renderScheduled = true;
-  var wait = Math.max(0, 70 - (Date.now() - lastStreamRenderAt));
+  var gen = streamGen;
+  // 长回答别每帧重排:文本越长间隔越大,滚动更稳
+  var interval = streamingText.length > 12000 ? 160 :
+    (streamingText.length > 4000 ? 110 : 60);
+  var wait = Math.max(0, interval - (Date.now() - lastStreamRenderAt));
   setTimeout(function () {
     requestAnimationFrame(function () {
       renderScheduled = false;
+      if (gen !== streamGen) return;   // 已收尾/已重开,丢弃过期帧
       lastStreamRenderAt = Date.now();
       renderStreaming();
     });
@@ -662,6 +864,7 @@ function clearStreaming() {
 }
 
 function removeStreamingRow() {
+  streamGen++;
   if (streamClearTimer) {
     clearTimeout(streamClearTimer);
     streamClearTimer = null;
@@ -688,9 +891,27 @@ function cssColor(v) {
   return s;
 }
 
+function setFontSize(px) {
+  var n = Number(px);
+  if (!n || n < 10 || n > 30) return;
+  document.body.style.fontSize = n + "px";
+}
+
 function setTheme(dark, userBg, assistantBg, userFg, assistantFg, errorBg, errorFg) {
   document.body.classList.toggle("dark", !!dark);
   document.body.style.color = dark ? "#E6E1E5" : "#1C1B1F";
+  if (mermaidReady) {
+    try {
+      mermaid.initialize({
+        startOnLoad: false, securityLevel: "loose",
+        theme: dark ? "dark" : "default", fontFamily: "inherit",
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
+        class: { htmlLabels: false },
+        state: { htmlLabels: false }
+      });
+    } catch (e) { /* 忽略主题重初始化失败 */ }
+  }
   themeStyle.textContent =
     ".row.user .bubble { background:" + cssColor(userBg) +
     "; color:" + cssColor(userFg) + "; }" +
@@ -735,6 +956,27 @@ window.onerror = function (msg) {
  * 只有前者需要按锚点补偿 scrollTop,对后者补偿会把用户视口无故拽走。 */
 var prevFirstId = null;
 
+function appendMessage(payload) {
+  var m;
+  try {
+    m = typeof payload === "string" ? JSON.parse(payload) : payload;
+  } catch (e) { return; }
+  if (!m || m.id == null) return;
+  messageStore[m.id] = m;
+  var tmp = document.createElement("div");
+  tmp.innerHTML = messageHtml(m);
+  var row = tmp.firstElementChild;
+  if (!row) return;
+  chatEl.appendChild(row);
+  wrapTables(row);
+  addCopyButtons(row);
+  renderMermaid(row);
+  removeStreamingRow();
+  if (prevFirstId == null) prevFirstId = m.id;
+  if (isPinned()) scrollToBottom(false);
+  reportScroll();
+}
+
 function setMessages(payload, hasMore) {
   // Kotlin 侧用 JSONObject.quote 传进来的是 JSON 字符串,必须解析成数组;
   // 直接当数组遍历会退化成"逐字符渲染",整个会话变成一堆空气泡。
@@ -775,7 +1017,7 @@ function setMessages(payload, hasMore) {
   var tail = list.length ? list[list.length - 1] : null;
   var landed = !!tail && tail.role !== "user" && streamingText.length > 0 &&
     String(tail.content == null ? "" : tail.content) === streamingText;
-  if (landed || streamPendingClear) removeStreamingRow();
+  if ((tail && tail.role !== "user") || landed || streamPendingClear) removeStreamingRow();
 
   if (wasPinned) {
     scrollToBottom(false);

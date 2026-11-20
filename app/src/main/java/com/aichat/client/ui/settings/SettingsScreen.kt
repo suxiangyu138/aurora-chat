@@ -43,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aichat.client.data.remote.provider.ProviderId
@@ -89,6 +91,7 @@ fun SettingsScreen(
     val modelsLoading by viewModel.modelsLoading.collectAsStateWithLifecycle()
     val modelsError by viewModel.modelsError.collectAsStateWithLifecycle()
     val modelsFromApi by viewModel.modelsFromApi.collectAsStateWithLifecycle()
+    val chatFontSize by viewModel.chatFontSize.collectAsStateWithLifecycle()
     val profileEnabled by viewModel.profileEnabled.collectAsStateWithLifecycle()
     val profileText by viewModel.profileText.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
@@ -446,6 +449,28 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            // ---------- 聊天字号 ----------
+            Text("聊天字号", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Slider(
+                    value = chatFontSize.toFloat(),
+                    onValueChange = { viewModel.setChatFontSize(it.toInt()) },
+                    valueRange = 12f..24f,
+                    steps = 11,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("${chatFontSize}px", style = MaterialTheme.typography.bodySmall)
+            }
+            Text(
+                "预览:这是一条示例消息,字号会应用到聊天正文。",
+                fontSize = chatFontSize.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // ---------- 个性化画像 ----------
             Text("个性化", style = MaterialTheme.typography.titleMedium)

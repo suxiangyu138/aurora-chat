@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](#兼容性)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Version](https://img.shields.io/badge/release-v2.0.0-6366F1)](https://gitee.com/suxiangyu138/aurora-chat/releases)
+[![Version](https://img.shields.io/badge/release-v2.0.1-6366F1)](https://gitee.com/suxiangyu138/aurora-chat/releases)
 [![Backend](https://img.shields.io/badge/服务端-无-0D9488)](#隐私与安全)
 
 [下载安装](#下载安装) · [使用教程](#使用教程) · [从源码构建](#从源码构建) · [隐私与安全](#隐私与安全) · [架构](#架构)
@@ -46,6 +46,7 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 - **完整 Markdown**:标题/列表/表格/引用/图片/链接,代码块语法高亮并支持复制
 - **公式与图表**:KaTeX 渲染数学公式,mhchem 支持 `\ce{}` 化学式,希腊字母与物理公式直接可用;Mermaid 代码块渲染成图,点击可全屏缩放
 - **表格不撑破**:宽表自动横向滚动,并可一键「表格全屏」
+- **图表以位图呈现**:Mermaid 渲染后栅格化为 PNG 显示,尺寸稳定不依赖 WebView 的 SVG 布局;点击可全屏查看并双指缩放
 - **代码全屏**:字号紧凑,全屏后可左右滑动、长按选中复制,亮色主题
 - **深度思考**:按厂商下发思考参数,默认关闭,回答中的思考过程可展开
 - **联网搜索**:使用厂商服务端原生工具(如 DeepSeek `deepseek_web_search` / `deepseek_read_url`),回答带引用;不支持的厂商置灰,不偷偷借用别家 Key
@@ -57,6 +58,7 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 ### 用量与上下文
 
 - 每轮回答标注:输入 token、输出 token、缓存命中率、本轮费用
+- 聊天字号可在 12–24px 之间调节,设置页实时预览
 - 顶栏统计:本会话累计 token、累计花费、当前上下文占用(已用 / 模型上限)
 - 费用按公开人民币价目表估算,DeepSeek 支持峰谷价;没有人民币价格的模型只显示 token 与「费用未收录」
 - 上下文默认不限轮数,直到模型窗口上限;达到上限后再考虑压缩(排期中)
@@ -76,9 +78,9 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 
 ## 下载安装
 
-前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载 `AuroraChat-v2.0.0.apk`,手机安装(需允许安装未知来源应用)。Gitee 用户可从 [Gitee 发行版](https://gitee.com/suxiangyu138/aurora-chat/releases) 获取同一安装包。
+前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载 `AuroraChat-v2.0.1.apk`,手机安装(需允许安装未知来源应用)。Gitee 用户可从 [Gitee 发行版](https://gitee.com/suxiangyu138/aurora-chat/releases) 获取同一安装包。
 
-> v2.0.0 的 release 包约 12MB;debug 包包含调试信息与未裁剪代码,体积约 110MB,仅用于开发。
+> v2.0.1 的 release 包约 12MB;debug 包包含调试信息与未裁剪代码,体积约 110MB,仅用于开发。
 
 ## 使用教程
 

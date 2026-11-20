@@ -55,6 +55,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _modelsFromApi = MutableStateFlow(false)
     val modelsFromApi: StateFlow<Boolean> = _modelsFromApi.asStateFlow()
 
+    // ---------- 聊天字号 ----------
+
+    val chatFontSize: StateFlow<Int> = settingsRepository.chatFontSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 15)
+
+    fun setChatFontSize(sizeSp: Int) {
+        viewModelScope.launch { settingsRepository.setChatFontSize(sizeSp) }
+    }
+
     // ---------- 个性化画像 ----------
 
     val profileEnabled: StateFlow<Boolean> = settingsRepository.profileEnabled

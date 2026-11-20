@@ -35,10 +35,29 @@
   }
   .mermaid-diagram {
     margin: 8px 0; padding: 8px; border-radius: 10px;
-    background: rgba(125,125,135,0.08); overflow-x: auto;
+    background: rgba(125,125,135,0.08);
+    overflow: auto; max-height: 72vh;
     text-align: center;
   }
+  .mermaid-diagram { position: relative; }
   .mermaid-diagram svg { max-width: 100%; height: auto; }
+  /* 原位缩放:点一下进入,容器接管触摸,图在框内缩放/拖动 */
+  .mermaid-diagram.diagram-zoomed {
+    overflow: hidden; touch-action: none;
+    box-shadow: inset 0 0 0 1px rgba(128,128,128,0.25);
+  }
+  .diagram-metrics {
+    margin-top: 2px; font-size: 9px; opacity: 0.45; text-align: right;
+  }
+  .diagram-zoom-hint {
+    position: absolute; top: 4px; right: 8px;
+    font-size: 10px; opacity: 0.55; pointer-events: none;
+  }
+  .render-fallback {
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 0.9em; padding: 8px 10px;
+    background: rgba(128,128,128,0.12); border-radius: 8px;
+  }
   .mermaid-error { font-size: 11px; opacity: 0.65; margin: 4px 0 8px; }
   .file-chip {
     display: inline-block; margin-bottom: 6px; padding: 4px 10px;
@@ -136,6 +155,21 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  /* ---------- 图表全屏(原位放大,不克隆) ---------- */
+  .mermaid-diagram.diagram-zoom {
+    position: fixed; inset: 0; z-index: 9998;
+    margin: 0; padding: 12px; border-radius: 0;
+    background: #fafafa;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; touch-action: none;
+  }
+  body.dark .mermaid-diagram.diagram-zoom { background: #141414; }
+  .mermaid-diagram.diagram-zoom svg {
+    width: 92vw !important; height: auto !important;
+    max-width: 92vw !important; max-height: 88vh !important;
+  }
+  .diagram-zoom .zoom-close { z-index: 10000; }
+
   /* ---------- 表格全屏 ---------- */
   .table-overlay {
     position: fixed; inset: 0; z-index: 9999;
@@ -172,22 +206,37 @@
   /* ---------- 图表放大层 ---------- */
   .zoom-overlay {
     position: fixed; inset: 0; z-index: 9999;
-    background: rgba(0, 0, 0, 0.9);
+    background: #fafafa; color: #1c1b1f;
     display: flex; align-items: center; justify-content: center;
     overflow: hidden; touch-action: none;
   }
-  .zoom-content { transition: transform 0.04s linear; max-width: 96vw; max-height: 92vh; }
-  .zoom-content svg { max-width: 96vw; max-height: 92vh; height: auto; }
+  body.dark .zoom-overlay { background: #141414; color: #e6e6e6; }
+  .zoom-content {
+    transition: transform 0.04s linear;
+    width: 92vw; display: flex; align-items: center; justify-content: center;
+    background: transparent;
+  }
+  .zoom-content svg {
+    /* 必须给显式宽度:flex 项里 svg 的 width:100% 会算成 0,整层看起来就是白屏 */
+    width: 92vw; height: auto;
+    max-width: 92vw; max-height: 88vh;
+  }
   .zoom-close {
     position: fixed; top: 18px; right: 18px; z-index: 10000;
     width: 36px; height: 36px; border-radius: 50%; border: none;
-    background: rgba(255,255,255,0.18); color: #fff; font-size: 18px;
+    background: rgba(128,128,128,0.18); color: inherit; font-size: 18px;
   }
   .zoom-tip { position: fixed; bottom: 24px; left: 0; right: 0; text-align: center;
-    color: rgba(255,255,255,0.6); font-size: 12px; z-index: 10000; }
+    color: rgba(128,128,128,0.8); font-size: 12px; z-index: 10000; }
 
   /* ---------- 图片 ---------- */
-  img.msg-image { max-width: 100%; border-radius: 10px; margin-top: 6px; display: block; }
+  /* 聊天里的图片只做缩略图:单张不超过半屏宽、150px 高,点开再看大图 */
+  .msg-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  img.msg-image {
+    max-width: 46%; max-height: 150px; width: auto; height: auto;
+    object-fit: cover; border-radius: 10px; display: block; cursor: zoom-in;
+  }
+  .msg-images img.msg-image:only-child { max-width: 62%; max-height: 190px; }
 
   /* ---------- 思考过程 ---------- */
   .reasoning { margin-bottom: 6px; }
@@ -228,6 +277,17 @@
     font-size: 13px; padding: 4px 18px; border-radius: 14px;
     border: 1px solid rgba(128, 128, 128, 0.4);
     background: rgba(128, 128, 128, 0.12); color: inherit; cursor: pointer;
+  }
+
+  /* 图表最终展示规则:原始像素大小,不缩放不裁剪,超宽时容器横向滚动 */
+  .mermaid-diagram { overflow: auto !important; max-height: none !important; }
+  .mermaid-diagram img.mermaid-img {
+    width: auto;
+    max-width: none;
+    height: auto;
+    display: inline-block;
+    border-radius: 8px;
+    cursor: zoom-in;
   }
 </style>
 </head>

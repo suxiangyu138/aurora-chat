@@ -48,6 +48,10 @@ class ChatViewModel(
     val configs: StateFlow<List<ModelConfig>> = settingsRepository.allConfigs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** 聊天正文基准字号(sp) */
+    val chatFontSize: StateFlow<Int> = settingsRepository.chatFontSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 15)
+
     /** 当前生效配置 */
     val activeConfig: StateFlow<ModelConfig?> = settingsRepository.activeConfig
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)

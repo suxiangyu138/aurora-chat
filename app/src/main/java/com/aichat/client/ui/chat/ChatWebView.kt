@@ -37,6 +37,7 @@ import org.json.JSONObject
 @Composable
 fun ChatWebView(
     messages: List<MessageEntity>,
+    chatFontSize: Int,
     streamingText: String?,
     streamingReasoning: String?,
     hasMore: Boolean,
@@ -50,6 +51,8 @@ fun ChatWebView(
     onScrollState: (Boolean) -> Unit,
     onMenu: (Long) -> Unit,
     onImage: (Long, Int) -> Unit,
+    onDiagram: (String) -> Unit,
+    onDiagramImage: (String) -> Unit,
     onRetry: (Long) -> Unit,
     onLoadEarlier: () -> Unit,
     onWebViewReady: (WebView) -> Unit = {},
@@ -69,20 +72,31 @@ fun ChatWebView(
     val currentOnScrollState = rememberUpdatedState(onScrollState)
     val currentOnMenu = rememberUpdatedState(onMenu)
     val currentOnImage = rememberUpdatedState(onImage)
+    val currentOnDiagram = rememberUpdatedState(onDiagram)
+    val currentOnDiagramImage = rememberUpdatedState(onDiagramImage)
     val currentOnRetry = rememberUpdatedState(onRetry)
     val currentOnLoadEarlier = rememberUpdatedState(onLoadEarlier)
     val currentOnWebViewReady = rememberUpdatedState(onWebViewReady)
 
     var pageLoaded by remember { mutableStateOf(false) }
     var sentMsgKey by remember { mutableStateOf("") }
+    var sentIds by remember { mutableStateOf<List<Long>>(emptyList()) }
     var sentThemeKey by remember { mutableStateOf("") }
     var wasStreaming by remember { mutableStateOf(false) }
     var sentStreamLen by remember { mutableStateOf(-1) }
+    var sentFontSize by remember { mutableStateOf(-1) }
     var sentReasonLen by remember { mutableStateOf(-1) }
 
     val gson = remember { Gson() }
 
     fun quote(s: String) = JSONObject.quote(s)
+
+    fun syncFontSize(webView: WebView) {
+        val size = chatFontSize
+        if (size == sentFontSize) return
+        sentFontSize = size
+        webView.evaluateJavascript("setFontSize($size)", null)
+    }
 
     fun syncTheme(webView: WebView) {
         val key = listOf(
@@ -128,26 +142,47 @@ fun ChatWebView(
                 if (lastUser >= 0 && prompt > 0) userPrompt[lastUser] = prompt
             }
         }
-        val json = gson.toJson(
-            list.mapIndexed { index, it ->
-                mapOf(
-                    "id" to it.id,
-                    "role" to it.role,
-                    "content" to it.content,
-                    "reasoning" to it.reasoning.orEmpty(),
-                    "image" to it.imageBase64.orEmpty(),
-                    "imagesJson" to it.imagesJson.orEmpty(),
-                    "filesJson" to it.filesJson.orEmpty(),
-                    "status" to it.status,
-                    "usage" to it.usageJson.orEmpty(),
-                    "attachmentName" to it.attachmentName.orEmpty(),
-                    "promptTokens" to (userPrompt[index] ?: 0)
-                )
-            }
+        fun messageMap(m: MessageEntity, promptTokens: Int): Map<String, Any> = mapOf(
+            "id" to m.id,
+            "role" to m.role,
+            "content" to m.content,
+            "reasoning" to m.reasoning.orEmpty(),
+            "image" to m.imageBase64.orEmpty(),
+            "imagesJson" to m.imagesJson.orEmpty(),
+            "filesJson" to m.filesJson.orEmpty(),
+            "status" to m.status,
+            "usage" to m.usageJson.orEmpty(),
+            "attachmentName" to m.attachmentName.orEmpty(),
+            "promptTokens" to promptTokens
         )
+
+        // 追加路径:只在末尾多出一条 AI 回复时走增量追加,
+        // 避免回答结束时整段会话重渲染造成的"卡一下"
+        val canAppend = sentIds.isNotEmpty() &&
+            list.size == sentIds.size + 1 &&
+            list.take(list.size - 1).map { it.id } == sentIds &&
+            list.last().role == "assistant"
+        val previousIds = sentIds
+        sentIds = list.map { it.id }
+        if (canAppend && previousIds == list.dropLast(1).map { it.id }) {
+            val last = list.last()
+            val payload = gson.toJson(messageMap(last, 0))
+            webView.evaluateJavascript("appendMessage(${quote(payload)})", null)
+            if (currentStreamingText.value == null) {
+                webView.evaluateJavascript("removeStreamingRow()", null)
+            }
+            return
+        }
+
+        val json = gson.toJson(list.mapIndexed { index, it -> messageMap(it, userPrompt[index] ?: 0) })
         webView.evaluateJavascript(
             "setMessages(${quote(json)}, ${currentHasMore.value})", null
         )
+        // 每次正式消息变化都顺手清一次流式行:非流式期间它本就不该存在,
+        // 遗留的"空气泡+闪烁光标"由此兜底清除
+        if (currentStreamingText.value == null) {
+            webView.evaluateJavascript("removeStreamingRow()", null)
+        }
     }
 
     fun syncStreaming(webView: WebView) {
@@ -157,7 +192,9 @@ fun ChatWebView(
                 wasStreaming = false
                 sentStreamLen = -1
                 sentReasonLen = -1
-                webView.evaluateJavascript("clearStreaming()", null)
+                // 结束态强制移除流式行:只依赖页面内部"等正式消息到达"的判断,
+                // 偶尔会因为顺序问题把光标留成一条空气泡一直闪
+                webView.evaluateJavascript("clearStreaming(); removeStreamingRow();", null)
                 syncMessages(webView)
             }
             return
@@ -206,6 +243,16 @@ fun ChatWebView(
                     }
 
                     @JavascriptInterface
+                    fun openDiagram(svg: String) {
+                        post { currentOnDiagram.value?.invoke(svg) }
+                    }
+
+                    @JavascriptInterface
+                    fun openDiagramImage(dataUrl: String) {
+                        post { currentOnDiagramImage.value?.invoke(dataUrl) }
+                    }
+
+                    @JavascriptInterface
                     fun onImage(id: String, index: String) {
                         post {
                             id.toLongOrNull()?.let { sid ->
@@ -248,6 +295,8 @@ fun ChatWebView(
                         // 否则去重逻辑会直接跳过 → 白屏或只剩半截流式内容
                         sentThemeKey = ""
                         sentMsgKey = ""
+                        sentIds = emptyList()
+                        sentFontSize = -1
                         wasStreaming = false
                         sentStreamLen = -1
                         sentReasonLen = -1
@@ -285,6 +334,7 @@ fun ChatWebView(
         update = { webView ->
             // 注意:流式期间此块每帧都会跑,不要在这里打日志
             if (!pageLoaded) return@AndroidView
+            syncFontSize(webView)
             syncTheme(webView)
             syncMessages(webView)
             syncStreaming(webView)

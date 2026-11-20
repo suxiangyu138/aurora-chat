@@ -29,5 +29,9 @@ class SessionRepository(private val database: AppDatabase) {
 
     suspend fun deleteSession(id: Long) = database.sessionDao().deleteById(id)
 
+    suspend fun deleteSessions(ids: List<Long>) {
+        if (ids.isNotEmpty()) database.sessionDao().deleteByIds(ids)
+    }
+
     suspend fun clearMessages(sessionId: Long) = database.messageDao().deleteBySession(sessionId)
 }

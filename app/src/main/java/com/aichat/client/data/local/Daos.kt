@@ -31,6 +31,10 @@ interface SessionDao {
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** 批量删除会话(消息按外键级联删除) */
+    @Query("DELETE FROM sessions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+
     /** 清理所有匿名会话(启动时兜底:上次异常退出没来得及删) */
     @Query("DELETE FROM sessions WHERE ephemeral = 1")
     suspend fun deleteAllEphemeral()

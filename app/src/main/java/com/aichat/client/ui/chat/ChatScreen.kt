@@ -80,10 +80,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -114,6 +117,67 @@ private fun markdownToPlain(text: String): String {
     t = t.replace(Regex("[ \\t]+"), " ")
     t = t.replace(Regex("\\n{3,}"), "\n\n")
     return t.trim()
+}
+
+@Composable
+private fun DiagramOverlay(svg: String, dark: Boolean, onClose: () -> Unit) {
+    val bg = if (dark) Color(0xFF141414) else Color(0xFFFAFAFA)
+    var loaded by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bg)
+            .zIndex(20f)
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                android.webkit.WebView(ctx).apply {
+                    setBackgroundColor(if (dark) 0xFF141414.toInt() else 0xFFFAFAFA.toInt())
+                    settings.javaScriptEnabled = false
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+                    settings.setSupportZoom(true)
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    webViewClient = object : android.webkit.WebViewClient() {
+                        override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                            loaded = true
+                        }
+                    }
+                    loadDataWithBaseURL(null, diagramHtml(svg, dark), "text/html", "utf-8", null)
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            onRelease = { it.stopLoading(); it.destroy() }
+        )
+        if (!loaded) {
+            Text(
+                "图表加载中…",
+                modifier = Modifier.align(Alignment.Center),
+                color = if (dark) Color(0xFFE6E1E5) else Color(0xFF5F5F5F)
+            )
+        }
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "关闭")
+        }
+    }
+}
+
+/** 单独承载一张 Mermaid SVG 的页面:纯 SVG + 自适应宽度,支持 WebView 双指缩放 */
+private fun diagramHtml(svg: String, dark: Boolean): String {
+    val bg = if (dark) "#141414" else "#fafafa"
+    return "<!DOCTYPE html><html><head>" +
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, " +
+        "maximum-scale=6, user-scalable=yes\">" +
+        "<style>html,body{margin:0;height:100%;background:$bg;" +
+        "display:flex;align-items:center;justify-content:center;}" +
+        "svg{width:96vw;height:auto;max-height:92vh;}</style></head>" +
+        "<body>$svg</body></html>"
 }
 
 private fun fmtTokens(n: Int): String = when {
@@ -158,6 +222,7 @@ fun ChatScreen(
     val configs by viewModel.configs.collectAsStateWithLifecycle()
     val activeConfig by viewModel.activeConfig.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val chatFontSize by viewModel.chatFontSize.collectAsStateWithLifecycle()
     val balance by viewModel.balance.collectAsStateWithLifecycle()
     var modelMenuOpen by remember { mutableStateOf(false) }
     val provider = ProviderId.fromKey(activeConfig?.providerId)
@@ -178,6 +243,7 @@ fun ChatScreen(
     var menuMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var zoomBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var diagramSvg by remember { mutableStateOf<String?>(null) }
     var filePreview by remember { mutableStateOf<ChatFile?>(null) }
     var editText by remember { mutableStateOf("") }
 
@@ -208,6 +274,7 @@ fun ChatScreen(
 
     val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -532,6 +599,7 @@ fun ChatScreen(
     ) { padding ->
         ChatWebView(
             messages = messages,
+            chatFontSize = chatFontSize,
             streamingText = streamingText,
             streamingReasoning = streamingReasoning,
             hasMore = hasMore,
@@ -544,6 +612,13 @@ fun ChatScreen(
             errorTextColor = hex(MaterialTheme.colorScheme.onErrorContainer),
             onScrollState = { atBottom = it },
             onMenu = { id -> menuMessage = messages.firstOrNull { it.id == id } },
+            onDiagram = { svg -> diagramSvg = svg },
+            onDiagramImage = { dataUrl ->
+                val b64 = dataUrl.substringAfter("base64,", "")
+                if (b64.isNotEmpty()) {
+                    zoomBitmap = ImageUtils.base64ToBitmap(b64)
+                }
+            },
             onImage = { id, index ->
                 val msg = messages.firstOrNull { it.id == id }
                 val b64 = runCatching {
@@ -620,6 +695,12 @@ fun ChatScreen(
         }
     }
 
+    // 图表全屏覆盖层:与聊天页同层,尺寸必然正确;内部仍是独立 WebView 只加载这张 SVG
+    diagramSvg?.let { svg ->
+        DiagramOverlay(svg = svg, dark = darkTheme) { diagramSvg = null }
+    }
+    }
+
     // 文档内容预览
     filePreview?.let { f ->
         AlertDialog(
@@ -651,7 +732,7 @@ fun ChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(if (darkTheme) Color(0xFF141414) else Color.White)
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             scale = (scale * zoom).coerceIn(1f, 5f)
@@ -678,7 +759,11 @@ fun ChatScreen(
                         .align(Alignment.TopEnd)
                         .padding(12.dp)
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "关闭", tint = Color.White)
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "关闭",
+                        tint = if (darkTheme) Color.White else Color(0xFF1C1B1F)
+                    )
                 }
             }
         }

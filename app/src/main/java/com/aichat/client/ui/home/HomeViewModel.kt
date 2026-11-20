@@ -40,4 +40,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteSession(id: Long) {
         viewModelScope.launch { repository.deleteSession(id) }
     }
+
+    /** 批量删除(会话消息随外键级联删除) */
+    fun deleteSessions(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch { repository.deleteSessions(ids.toList()) }
+    }
 }

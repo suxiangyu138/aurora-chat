@@ -40,6 +40,7 @@ class SettingsRepository(private val context: Context) {
     private val KEY_ACCENT = intPreferencesKey("accent_color")
     private val KEY_PROFILE_ENABLED = booleanPreferencesKey("profile_enabled")
     private val KEY_PROFILE_TEXT = stringPreferencesKey("profile_text")
+    private val KEY_CHAT_FONT = intPreferencesKey("chat_font_size")
 
     // ---------- 主题设置 ----------
 
@@ -68,6 +69,19 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAccentColor(argb: Int) {
         context.dataStore.edit { prefs -> prefs[KEY_ACCENT] = argb }
+    }
+
+    // ---------- 聊天字号 ----------
+
+    /** 聊天正文基准字号(sp),默认 15 */
+    val chatFontSize: Flow<Int> = context.dataStore.data.map { prefs ->
+        (prefs[KEY_CHAT_FONT] ?: 15).coerceIn(12, 24)
+    }
+
+    suspend fun setChatFontSize(sizeSp: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CHAT_FONT] = sizeSp.coerceIn(12, 24)
+        }
     }
 
     // ---------- 个性化画像 ----------
