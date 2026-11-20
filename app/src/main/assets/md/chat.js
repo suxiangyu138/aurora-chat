@@ -19,6 +19,17 @@ var md = window.markdownit({
   }
 });
 
+/* Mermaid 代码块:保留语言标记,渲染时替换成 SVG 图 */
+var defaultFence = md.renderer.rules.fence;
+md.renderer.rules.fence = function (tokens, idx, options, env, self) {
+  var info = (tokens[idx].info || "").trim().split(/\s+/)[0].toLowerCase();
+  if (info === "mermaid") {
+    return '<pre class="mermaid-src"><code class="language-mermaid">' +
+      md.utils.escapeHtml(tokens[idx].content) + '</code></pre>';
+  }
+  return defaultFence(tokens, idx, options, env, self);
+};
+
 /* ---------- Markdown + 数学公式 ---------- */
 
 /* 占位符用私用区字符:markdown-it 不会解析它们,可安全穿过 md.render()。
@@ -65,10 +76,67 @@ function extractMath(text, items) {
   return text;
 }
 
+function sanitizeHtmlTable(html) {
+  try {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var src = doc.querySelector("table");
+    if (!src) return "";
+    var out = '<div class="table-scroll"><table>';
+    var rows = src.querySelectorAll("tr");
+    for (var i = 0; i < rows.length; i++) {
+      out += "<tr>";
+      var cells = rows[i].children;
+      for (var j = 0; j < cells.length; j++) {
+        var c = cells[j];
+        var tag = (c.tagName || "").toLowerCase() === "th" ? "th" : "td";
+        var span = "";
+        var cs = parseInt(c.getAttribute("colspan") || "1", 10);
+        var rs = parseInt(c.getAttribute("rowspan") || "1", 10);
+        if (cs > 1) span += ' colspan="' + Math.min(cs, 50) + '"';
+        if (rs > 1) span += ' rowspan="' + Math.min(rs, 50) + '"';
+        out += "<" + tag + span + ">" + esc(c.textContent || "") + "</" + tag + ">";
+      }
+      out += "</tr>";
+    }
+    out += "</table></div>";
+    return out;
+  } catch (e) { return ""; }
+}
+
+/* 把表格包进横向滚动容器:窄屏下表格再宽也不会撑破气泡 */
+function wrapTables(root) {
+  var tables = root.querySelectorAll("table");
+  for (var i = 0; i < tables.length; i++) {
+    var t = tables[i];
+    var parent = t.parentElement;
+    if (parent && parent.className && parent.className.indexOf("table-scroll") >= 0) continue;
+    var wrap = document.createElement("div");
+    wrap.className = "table-scroll";
+    t.parentNode.insertBefore(wrap, t);
+    var full = document.createElement("button");
+    full.className = "table-full-btn";
+    full.textContent = "表格全屏";
+    full.onclick = function (e) {
+      e.stopPropagation();
+      openTableFullscreen(t);
+    };
+    wrap.appendChild(full);
+    wrap.appendChild(t);
+  }
+}
+
 function renderMarkdown(text) {
   var items = [];
   var guards = [];
+  var tables = [];
   var t = guardCode(String(text == null ? "" : text), guards);
+  // 模型偶尔直接输出 HTML 表格:先抽走并清洗,避免被当成源码展示
+  t = t.replace(/<table[\s\S]*?<\/table>/gi, function (m) {
+    var clean = sanitizeHtmlTable(m);
+    if (!clean) return m;
+    tables.push(clean);
+    return "\n\nAURORATABLE" + (tables.length - 1) + "AURORATABLE\n\n";
+  });
   t = extractMath(t, items);
   // 代码原文还原,交回 markdown-it 正常渲染(围栏高亮走 highlight 回调)
   t = t.replace(guardPattern, function (m, i) {
@@ -76,6 +144,9 @@ function renderMarkdown(text) {
     return g == null ? "" : g;
   });
   var html = md.render(t);
+  html = html.replace(/<p>AURORATABLE(\d+)AURORATABLE<\/p>/g, function (m, i) {
+    return tables[parseInt(i, 10)] || "";
+  });
   html = html.replace(sentinelPattern, function (m, index) {
     var item = items[parseInt(index, 10)];
     if (!item) return "";
@@ -104,12 +175,16 @@ function addCopyButtons(root) {
   var pres = (root || document).querySelectorAll("pre");
   for (var i = 0; i < pres.length; i++) {
     var pre = pres[i];
-    if (pre.querySelector(".code-copy")) continue;
+    if (pre.querySelector(".code-actions")) continue;
+    var actions = document.createElement("div");
+    actions.className = "code-actions";
+
     var btn = document.createElement("button");
     btn.className = "code-copy";
     btn.textContent = "复制";
     btn.onclick = (function (p) {
-      return function () {
+      return function (e) {
+        e.stopPropagation();
         var code = p.querySelector("code");
         var text = code ? code.innerText : p.innerText;
         if (window.MdBridge) window.MdBridge.copyText(text);
@@ -118,8 +193,78 @@ function addCopyButtons(root) {
         setTimeout(function () { self.textContent = "复制"; }, 1500);
       };
     })(pre);
-    pre.appendChild(btn);
+    actions.appendChild(btn);
+
+    var full = document.createElement("button");
+    full.className = "code-copy";
+    full.textContent = "全屏";
+    full.onclick = (function (p) {
+      return function (e) {
+        e.stopPropagation();
+        var code = p.querySelector("code");
+        openCodeFullscreen(code ? code.innerText : p.innerText);
+      };
+    })(pre);
+    actions.appendChild(full);
+
+    pre.appendChild(actions);
   }
+}
+
+function openTableFullscreen(tableEl) {
+  var old = document.querySelector(".table-overlay");
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement("div");
+  overlay.className = "table-overlay";
+
+  var head = document.createElement("div");
+  head.className = "full-head";
+  var close = document.createElement("button");
+  close.textContent = "关闭";
+  close.onclick = function () {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  };
+  head.appendChild(close);
+
+  var scroll = document.createElement("div");
+  scroll.className = "table-overlay-scroll";
+  scroll.appendChild(tableEl.cloneNode(true));
+
+  overlay.appendChild(head);
+  overlay.appendChild(scroll);
+  document.body.appendChild(overlay);
+}
+
+function openCodeFullscreen(text) {
+  var old = document.querySelector(".full-overlay");
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement("div");
+  overlay.className = "full-overlay";
+
+  var head = document.createElement("div");
+  head.className = "full-head";
+  var copy = document.createElement("button");
+  copy.textContent = "复制";
+  copy.onclick = function () {
+    if (window.MdBridge) window.MdBridge.copyText(text);
+    copy.textContent = "已复制";
+    setTimeout(function () { copy.textContent = "复制"; }, 1500);
+  };
+  var close = document.createElement("button");
+  close.textContent = "关闭";
+  close.onclick = function () {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  };
+  head.appendChild(copy);
+  head.appendChild(close);
+
+  var pre = document.createElement("pre");
+  pre.className = "full-code";
+  pre.textContent = text;
+
+  overlay.appendChild(head);
+  overlay.appendChild(pre);
+  document.body.appendChild(overlay);
 }
 
 /* ---------- 滚动 ---------- */
@@ -165,6 +310,145 @@ function reportScroll() {
 window.addEventListener("scroll", reportScroll);
 window.addEventListener("resize", reportScroll);
 
+/* ---------- Mermaid ---------- */
+
+var mermaidReady = typeof mermaid !== "undefined";
+var mermaidSeq = 0;
+if (mermaidReady) {
+  try {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "loose",
+      theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
+      fontFamily: "inherit"
+    });
+  } catch (e) { mermaidReady = false; }
+}
+
+function renderMermaid(root) {
+  if (!mermaidReady) return;
+  var blocks = root.querySelectorAll("pre.mermaid-src code.language-mermaid");
+  Array.prototype.forEach.call(blocks, function (code) {
+    var pre = code.parentNode;
+    if (!pre || pre.dataset.rendered === "1") return;
+    pre.dataset.rendered = "1";
+    var src = code.textContent;
+    var id = "mmd" + (++mermaidSeq);
+    try {
+      Promise.resolve(mermaid.render(id, src)).then(function (res) {
+        var div = document.createElement("div");
+        div.className = "mermaid-diagram";
+        div.innerHTML = res.svg || "";
+        div.dataset.src = src;
+        div.onclick = function () {
+          var svg = div.querySelector("svg");
+          if (svg) openDiagramZoom(svg);
+        };
+        if (pre.parentNode) pre.parentNode.replaceChild(div, pre);
+      }).catch(function () {
+        // 语法未闭合(流式中间态)或写法错误:保留源码,不打断整页渲染
+        pre.dataset.rendered = "error";
+        var tip = document.createElement("div");
+        tip.className = "mermaid-error";
+        tip.textContent = "图表语法无法解析,已按源码展示";
+        if (pre.parentNode) pre.parentNode.insertBefore(tip, pre.nextSibling);
+      });
+    } catch (e) { /* 忽略 */ }
+  });
+}
+
+/* ---------- 图表全屏放大(双指缩放 / 单指拖动) ---------- */
+var zoomOverlay = null;
+var zoomState = { scale: 1, x: 0, y: 0 };
+
+function closeDiagramZoom() {
+  if (zoomOverlay && zoomOverlay.parentNode) zoomOverlay.parentNode.removeChild(zoomOverlay);
+  zoomOverlay = null;
+}
+
+function openDiagramZoom(svg) {
+  closeDiagramZoom();
+  zoomState = { scale: 1, x: 0, y: 0 };
+  var overlay = document.createElement("div");
+  overlay.className = "zoom-overlay";
+  var box = document.createElement("div");
+  box.className = "zoom-content";
+  box.appendChild(svg.cloneNode(true));
+  overlay.appendChild(box);
+
+  var close = document.createElement("button");
+  close.className = "zoom-close";
+  close.textContent = "✕";
+  close.onclick = closeDiagramZoom;
+  overlay.appendChild(close);
+
+  var tip = document.createElement("div");
+  tip.className = "zoom-tip";
+  tip.textContent = "双指缩放 · 单指拖动 · 点击空白关闭";
+  overlay.appendChild(tip);
+
+  function apply() {
+    box.style.transform = "translate(" + zoomState.x + "px," + zoomState.y + "px) scale(" +
+      zoomState.scale + ")";
+  }
+
+  var pointers = {};
+  var lastDist = 0;
+  var lastCenter = null;
+
+  overlay.addEventListener("touchstart", function (e) {
+    if (e.target === overlay || e.target === close) return;
+    if (e.touches.length === 2) {
+      lastDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastCenter = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+      };
+    } else if (e.touches.length === 1) {
+      pointers.x = e.touches[0].clientX;
+      pointers.y = e.touches[0].clientY;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  overlay.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 2) {
+      var dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (lastDist > 0) {
+        zoomState.scale = Math.min(6, Math.max(1, zoomState.scale * dist / lastDist));
+        lastDist = dist;
+        apply();
+      }
+    } else if (e.touches.length === 1 && !lastDist) {
+      var dx = e.touches[0].clientX - pointers.x;
+      var dy = e.touches[0].clientY - pointers.y;
+      pointers.x = e.touches[0].clientX;
+      pointers.y = e.touches[0].clientY;
+      zoomState.x += dx;
+      zoomState.y += dy;
+      apply();
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  overlay.addEventListener("touchend", function (e) {
+    if (e.touches.length === 0) { lastDist = 0; lastCenter = null; }
+  });
+
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) closeDiagramZoom();
+  });
+
+  document.body.appendChild(overlay);
+  zoomOverlay = overlay;
+}
+
 /* ---------- 消息渲染 ---------- */
 
 function reasoningBlock(reasoning, open) {
@@ -175,13 +459,56 @@ function reasoningBlock(reasoning, open) {
     esc(reasoning) + '</div></div>';
 }
 
+/* 用量行:AI 气泡显示输入/输出/缓存命中/费用,用户气泡只显示本轮输入 token */
+function fmtTok(n) {
+  n = Number(n) || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+  return String(n);
+}
+
+function usageLineHtml(m, isUser) {
+  if (!isUser && m.usage) {
+    try {
+      var u = JSON.parse(m.usage);
+      var parts = ["输入 " + fmtTok(u.prompt), "输出 " + fmtTok(u.completion)];
+      if (u.prompt > 0) {
+        parts.push("缓存命中 " + Math.round((u.cached || 0) * 100 / u.prompt) + "%");
+      }
+      if (typeof u.cost === "number") parts.push("本轮 ¥" + u.cost.toFixed(4));
+      return '<div class="usage-line">' + parts.join(" · ") + '</div>';
+    } catch (e) { return ""; }
+  }
+  if (isUser && m.promptTokens > 0) {
+    return '<div class="usage-line">输入 ' + fmtTok(m.promptTokens) + ' tokens</div>';
+  }
+  return "";
+}
+
 function messageHtml(m) {
   var isUser = m.role === "user";
   var isError = m.status === "error";
   var inner = "";
-  if (m.image) {
-    inner += '<img class="msg-image" src="data:image/jpeg;base64,' + m.image + '" alt="图片">';
+  // 文件:优先多文件 JSON,兼容旧版单附件字段
+  var files = [];
+  try { files = m.filesJson ? JSON.parse(m.filesJson) : []; } catch (e) { files = []; }
+  if ((!files || !files.length) && m.attachmentName) {
+    files = [{ name: m.attachmentName }];
   }
+  (files || []).forEach(function (f) {
+    if (f && f.name) inner += '<div class="file-chip">📄 ' + esc(f.name) + '</div>';
+  });
+
+  // 图片:优先多图 JSON,兼容旧版单图字段
+  var imgs = [];
+  try { imgs = m.imagesJson ? JSON.parse(m.imagesJson) : []; } catch (e) { imgs = []; }
+  if ((!imgs || !imgs.length) && m.image) imgs = [{ base64: m.image, mime: "image/jpeg" }];
+  (imgs || []).forEach(function (img, idx) {
+    if (!img || !img.base64) return;
+    var mime = img.mime || "image/jpeg";
+    inner += '<img class="msg-image" src="data:' + mime + ';base64,' + img.base64 +
+      '" alt="图片" onclick="openImage(\'' + m.id + '\', ' + idx + ')">';
+  });
   if (m.reasoning) inner += reasoningBlock(m.reasoning, false);
   if (isError) {
     inner += '<div class="content">' + esc(m.content) + '</div>';
@@ -190,13 +517,52 @@ function messageHtml(m) {
   } else {
     inner += '<div class="content">' + renderMarkdown(m.content) + '</div>';
   }
+  inner += usageLineHtml(m, isUser);
+  if (!isUser && !isError) inner += messageActions(m);
   var html = '<div class="row ' +
     (isUser ? "user" : (isError ? "error" : "assistant")) + '" id="m' + m.id + '">';
-  if (!isUser) html += '<div class="avatar">✦</div>';
   html += '<div class="bubble">' + inner + '</div>';
-  html += '<button class="msg-menu" onclick="menu(\'' + m.id + '\')">⋮</button>';
+  if (isUser) html += '<button class="msg-menu" onclick="menu(\'' + m.id + '\')">⋮</button>';
   html += '</div>';
   return html;
+}
+
+/* 点击图片交给原生层放大查看 */
+function openImage(id, index) {
+  if (window.MdBridge && window.MdBridge.onImage) {
+    window.MdBridge.onImage(String(id), String(index == null ? 0 : index));
+  }
+}
+
+/* ---------- 消息操作(气泡底部按钮) ---------- */
+var messageStore = {};
+
+function stripMarkdown(text) {
+  var t = String(text == null ? "" : text);
+  t = t.replace(/```[^\n]*\n/g, "").replace(/```/g, "");
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
+  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+  t = t.replace(/^#{1,6}\s*/gm, "");
+  t = t.replace(/^>\s?/gm, "");
+  t = t.replace(/^\s*[-*+]\s+/gm, "· ");
+  t = t.replace(/\*\*|__|~~|\*|`/g, "");
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t.trim();
+}
+
+function copyMessage(id, asMarkdown) {
+  var m = messageStore[id];
+  if (!m) return;
+  var text = asMarkdown ? m.content : stripMarkdown(m.content);
+  if (window.MdBridge && window.MdBridge.copyText) window.MdBridge.copyText(text);
+}
+
+function messageActions(m) {
+  return '<div class="msg-actions">' +
+    '<button onclick="copyMessage(\'' + m.id + '\', false)">复制全文</button>' +
+    '<button onclick="copyMessage(\'' + m.id + '\', true)">复制 Markdown</button>' +
+    '<button onclick="retry(\'' + m.id + '\')">重新生成</button>' +
+    '</div>';
 }
 
 /* ---------- 流式 ---------- */
@@ -236,7 +602,7 @@ function renderStreaming() {
     row = document.createElement("div");
     row.id = "streaming-row";
     row.className = "row assistant";
-    row.innerHTML = '<div class="avatar">✦</div><div class="bubble"></div>';
+    row.innerHTML = '<div class="bubble"></div>';
     // 挂在 #stream 里:setMessages 只重写 #chat,流式行不会被擦掉
     streamEl.appendChild(row);
   }
@@ -264,15 +630,20 @@ function resetStreaming(text, reasoning) {
   renderStreaming();
 }
 
+var lastStreamRenderAt = 0;
 function updateStreaming(textDelta, reasoningDelta) {
   streamingText += (textDelta || "");
   streamingReasoning += (reasoningDelta || "");
   if (renderScheduled) return;
   renderScheduled = true;
-  requestAnimationFrame(function () {
-    renderScheduled = false;
-    renderStreaming();
-  });
+  var wait = Math.max(0, 70 - (Date.now() - lastStreamRenderAt));
+  setTimeout(function () {
+    requestAnimationFrame(function () {
+      renderScheduled = false;
+      lastStreamRenderAt = Date.now();
+      renderStreaming();
+    });
+  }, wait);
 }
 
 /* 流式结束:内容此刻才写库,Room 的 Flow 回到界面还有几十毫秒延迟。
@@ -318,6 +689,7 @@ function cssColor(v) {
 }
 
 function setTheme(dark, userBg, assistantBg, userFg, assistantFg, errorBg, errorFg) {
+  document.body.classList.toggle("dark", !!dark);
   document.body.style.color = dark ? "#E6E1E5" : "#1C1B1F";
   themeStyle.textContent =
     ".row.user .bubble { background:" + cssColor(userBg) +
@@ -386,9 +758,15 @@ function setMessages(payload, hasMore) {
     html += '<div id="load-more"><button class="load-more-btn" onclick="loadEarlier()">' +
       '加载更早的消息</button></div>';
   }
-  for (var i = 0; i < list.length; i++) html += messageHtml(list[i]);
+  messageStore = {};
+  for (var i = 0; i < list.length; i++) {
+    messageStore[list[i].id] = list[i];
+    html += messageHtml(list[i]);
+  }
   chatEl.innerHTML = html;
+  wrapTables(chatEl);
   addCopyButtons(chatEl);
+  renderMermaid(chatEl);
 
   /* 流式行与正式气泡的交接:两者由 Kotlin 侧两条独立状态(messages / streamingText)
    * 推送,先后到达顺序不定。只要列表末尾已经是本次流式内容(说明已落库),

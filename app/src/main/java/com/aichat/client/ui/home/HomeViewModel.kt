@@ -25,6 +25,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 匿名会话:不保存、不进列表,退出即删 */
+    fun createAnonymousSession(onCreated: (Long) -> Unit) {
+        viewModelScope.launch {
+            val id = repository.createSession("匿名会话", ephemeral = true)
+            onCreated(id)
+        }
+    }
+
     fun renameSession(id: Long, title: String) {
         viewModelScope.launch { repository.renameSession(id, title) }
     }

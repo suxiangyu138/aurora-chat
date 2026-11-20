@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13 主题图标(单色层):只在系统开启「主题图标」时渲染,普通模式不显示 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="18"
+        android:translateY="18"
+        android:scaleX="3"
+        android:scaleY="3">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M4,5 h11 a4,4 0 0 1 4,4 v5 a4,4 0 0 1 -4,4 h-3 l-4,4 v-4 h-4 a4,4 0 0 1 -4,-4 v-5 a4,4 0 0 1 4,-4 z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M14,3 L15,5 L17,6 L15,7 L14,9 L13,7 L11,6 L13,5 Z" />
+    </group>
+</vector>

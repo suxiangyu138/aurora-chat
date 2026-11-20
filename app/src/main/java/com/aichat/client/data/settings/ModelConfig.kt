@@ -5,15 +5,22 @@ package com.aichat.client.data.settings
  */
 data class ModelConfig(
     val id: String = "",
-    val name: String = "默认配置",
+    val name: String = "",
     val baseUrl: String = "",
     val apiKey: String = "",
     val modelName: String = "",
+    /** 厂商标识(ProviderId.key);空或 custom 时按接口地址自动推断,中转站留 custom 即可 */
+    val providerId: String = "custom",
     val temperature: Float = 0.7f,
     val topP: Float = 1.0f,
     val maxTokens: Int = 8192,
     val timeoutSeconds: Int = 300,
-    val contextRounds: Int = 10,
+    /** 上下文记忆轮数:0 表示不限,携带全部历史直到模型上下文窗口上限 */
+    val contextRounds: Int = 0,
+    /** 深度思考默认关闭:聊天页可临时开启 */
+    val thinkingEnabled: Boolean = false,
+    /** 联网搜索默认开启:日期、时效性问题需要实时检索 */
+    val webSearchEnabled: Boolean = true,
     /** 流式输出开关(关闭后走非流式单次问答) */
     val streamEnabled: Boolean = true,
     /** 自定义请求体模板:支持 {model} {messages} {temperature} {top_p} {max_tokens} {stream} 占位符,留空用默认模板 */
@@ -29,6 +36,6 @@ data class ModelConfig(
         topP = topP.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1.0f,
         maxTokens = maxTokens.coerceIn(1, 32768),
         timeoutSeconds = timeoutSeconds.coerceIn(10, 600),
-        contextRounds = contextRounds.coerceIn(0, 50)
+        contextRounds = contextRounds.coerceIn(0, 1000)
     )
 }

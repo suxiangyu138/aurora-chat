@@ -49,6 +49,7 @@ fun ChatWebView(
     errorTextColor: String,
     onScrollState: (Boolean) -> Unit,
     onMenu: (Long) -> Unit,
+    onImage: (Long, Int) -> Unit,
     onRetry: (Long) -> Unit,
     onLoadEarlier: () -> Unit,
     onWebViewReady: (WebView) -> Unit = {},
@@ -67,6 +68,7 @@ fun ChatWebView(
     val currentErrorText = rememberUpdatedState(errorTextColor)
     val currentOnScrollState = rememberUpdatedState(onScrollState)
     val currentOnMenu = rememberUpdatedState(onMenu)
+    val currentOnImage = rememberUpdatedState(onImage)
     val currentOnRetry = rememberUpdatedState(onRetry)
     val currentOnLoadEarlier = rememberUpdatedState(onLoadEarlier)
     val currentOnWebViewReady = rememberUpdatedState(onWebViewReady)
@@ -98,21 +100,51 @@ fun ChatWebView(
     }
 
     fun syncMessages(webView: WebView) {
+        val list = currentMessages.value
+        // 先比对轻量指纹再序列化:流式期间本方法每帧都会跑,
+        // 直接 Gson 全量序列化会把每张图片的 base64 都转一遍,是掉帧的主因之一
+        val fingerprint = buildString {
+            append(currentHasMore.value)
+            list.forEach { m ->
+                append(m.id).append(':').append(m.content.length)
+                    .append(':').append(m.reasoning?.length ?: -1)
+                    .append(':').append(m.status)
+                    .append(':').append(m.usageJson?.length ?: -1)
+                    .append(':').append(m.imagesJson?.length ?: -1)
+                    .append(':').append(m.filesJson?.length ?: -1)
+                    .append(':').append(m.attachmentName?.length ?: -1)
+                    .append('|')
+            }
+        }
+        if (fingerprint == sentMsgKey) return
+        sentMsgKey = fingerprint
+        val userPrompt = HashMap<Int, Int>()
+        var lastUser = -1
+        list.forEachIndexed { index, m ->
+            if (m.role == "user") lastUser = index
+            if (m.role == "assistant" && !m.usageJson.isNullOrBlank()) {
+                val prompt = runCatching { JSONObject(m.usageJson).optInt("prompt", 0) }
+                    .getOrDefault(0)
+                if (lastUser >= 0 && prompt > 0) userPrompt[lastUser] = prompt
+            }
+        }
         val json = gson.toJson(
-            currentMessages.value.map {
+            list.mapIndexed { index, it ->
                 mapOf(
                     "id" to it.id,
                     "role" to it.role,
                     "content" to it.content,
                     "reasoning" to it.reasoning.orEmpty(),
                     "image" to it.imageBase64.orEmpty(),
-                    "status" to it.status
+                    "imagesJson" to it.imagesJson.orEmpty(),
+                    "filesJson" to it.filesJson.orEmpty(),
+                    "status" to it.status,
+                    "usage" to it.usageJson.orEmpty(),
+                    "attachmentName" to it.attachmentName.orEmpty(),
+                    "promptTokens" to (userPrompt[index] ?: 0)
                 )
             }
         )
-        val key = json + "|" + currentHasMore.value
-        if (key == sentMsgKey) return
-        sentMsgKey = key
         webView.evaluateJavascript(
             "setMessages(${quote(json)}, ${currentHasMore.value})", null
         )
@@ -171,6 +203,15 @@ fun ChatWebView(
                     @JavascriptInterface
                     fun onMenu(id: String) {
                         post { id.toLongOrNull()?.let { currentOnMenu.value?.invoke(it) } }
+                    }
+
+                    @JavascriptInterface
+                    fun onImage(id: String, index: String) {
+                        post {
+                            id.toLongOrNull()?.let { sid ->
+                                currentOnImage.value?.invoke(sid, index.toIntOrNull() ?: 0)
+                            }
+                        }
                     }
 
                     @JavascriptInterface

@@ -7,7 +7,11 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aichat.client.ChatApplication
-import com.aichat.client.data.remote.ChatMessage
+import com.aichat.client.data.remote.provider.ModelInfo
+import com.aichat.client.data.remote.provider.ProviderCatalog
+import com.aichat.client.data.remote.provider.ProviderId
+import com.aichat.client.data.remote.provider.TestKind
+import com.aichat.client.data.remote.provider.TestOutcome
 import com.aichat.client.data.settings.ModelConfig
 import com.aichat.client.data.settings.ModelPresets
 import com.aichat.client.data.settings.ThemeMode
@@ -25,7 +29,7 @@ import java.util.UUID
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = (application as ChatApplication).settingsRepository
-    private val apiClient = (application as ChatApplication).chatApiClient
+    private val providerApiClient = (application as ChatApplication).providerApiClient
 
     val configs: StateFlow<List<ModelConfig>> = settingsRepository.allConfigs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -36,6 +40,36 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** 表单状态(正在编辑的配置;空 id 表示新建) */
     private val _form = MutableStateFlow(ModelConfig())
     val form: StateFlow<ModelConfig> = _form.asStateFlow()
+
+    /** 当前表单可选的模型列表:内置清单 + 从接口拉取的结果 */
+    private val _models = MutableStateFlow<List<ModelInfo>>(emptyList())
+    val models: StateFlow<List<ModelInfo>> = _models.asStateFlow()
+
+    private val _modelsLoading = MutableStateFlow(false)
+    val modelsLoading: StateFlow<Boolean> = _modelsLoading.asStateFlow()
+
+    /** 拉取失败原因(重试入口的提示文本) */
+    private val _modelsError = MutableStateFlow<String?>(null)
+    val modelsError: StateFlow<String?> = _modelsError.asStateFlow()
+
+    private val _modelsFromApi = MutableStateFlow(false)
+    val modelsFromApi: StateFlow<Boolean> = _modelsFromApi.asStateFlow()
+
+    // ---------- 个性化画像 ----------
+
+    val profileEnabled: StateFlow<Boolean> = settingsRepository.profileEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val profileText: StateFlow<String> = settingsRepository.profileText
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    fun setProfileEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setProfileEnabled(enabled) }
+    }
+
+    fun setProfileText(text: String) {
+        viewModelScope.launch { settingsRepository.setProfileText(text) }
+    }
 
     // ---------- 外观设置 ----------
 
@@ -53,18 +87,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { settingsRepository.setAccentColor(argb) }
     }
 
+    // ---------- 测试连接 ----------
+
     private val _testing = MutableStateFlow(false)
     val testing: StateFlow<Boolean> = _testing.asStateFlow()
 
-    /** (成功, 消息) 的测试结果;null 表示无结果 */
-    private val _testResult = MutableStateFlow<Pair<Boolean, String>?>(null)
-    val testResult: StateFlow<Pair<Boolean, String>?> = _testResult.asStateFlow()
+    /** 分类后的测试结果;null 表示无结果 */
+    private val _testOutcome = MutableStateFlow<TestOutcome?>(null)
+    val testOutcome: StateFlow<TestOutcome?> = _testOutcome.asStateFlow()
+
+    fun consumeTestResult() {
+        _testOutcome.value = null
+    }
+
+    // ---------- 表单 ----------
 
     /** 打开页面时,表单为空则载入当前生效配置 */
     fun loadActiveIntoFormIfEmpty() {
         viewModelScope.launch {
             if (_form.value.baseUrl.isBlank() && _form.value.apiKey.isBlank()) {
-                settingsRepository.getActiveConfig()?.let { _form.value = it }
+                settingsRepository.getActiveConfig()?.let { config ->
+                    _form.value = config
+                    refreshModelCandidates()
+                }
             }
         }
     }
@@ -73,26 +118,97 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _form.value = transform(_form.value)
     }
 
+    /** 改接口地址:按域名自动识别厂商,中转站保持 custom,并清掉上一家的模型列表 */
+    fun updateBaseUrl(url: String) {
+        val detected = ProviderCatalog.detectProvider(url)
+        val current = ProviderId.fromKey(_form.value.providerId)
+        val provider = if (detected != ProviderId.CUSTOM) detected else current
+        _form.value = _form.value.copy(baseUrl = url, providerId = provider.key)
+        refreshModelCandidates()
+    }
+
     fun resetForm() {
         _form.value = ModelConfig()
+        refreshModelCandidates()
     }
 
     fun loadIntoForm(config: ModelConfig) {
         _form.value = config
+        refreshModelCandidates()
     }
 
-    /** 应用预设模板:一键填充 URL 与模型名(API Key 由用户填写) */
+    /** 应用预设模板:填充接口地址、厂商标识与模型名 */
     fun applyPreset(preset: ModelPresets.Preset) {
-        _form.value = _form.value.copy(baseUrl = preset.baseUrl, modelName = preset.model)
+        _form.value = _form.value.copy(
+            baseUrl = preset.baseUrl,
+            modelName = preset.model,
+            providerId = preset.provider.key
+        )
+        _modelsFromApi.value = false
+        _models.value = ProviderCatalog.builtinModels(preset.provider)
+        _modelsError.value = null
+    }
+
+    private fun refreshModelCandidates() {
+        val builtin = ProviderCatalog.builtinModels(
+            ProviderId.fromKey(_form.value.providerId)
+        )
+        _models.value = builtin
+        _modelsFromApi.value = false
+        _modelsError.value = null
+    }
+
+    fun selectModel(model: ModelInfo) {
+        _form.value = _form.value.copy(
+            modelName = model.id,
+            providerId = model.provider.key
+        )
+    }
+
+    /** 从接口拉取该地址下的全部可用模型(厂商官方或中转站均可) */
+    fun fetchModels() {
+        if (_modelsLoading.value) return
+        viewModelScope.launch {
+            val config = _form.value
+            _modelsLoading.value = true
+            _modelsError.value = null
+            val result = providerApiClient.fetchModels(config)
+            _modelsLoading.value = false
+            result.fold(
+                onSuccess = { fetched ->
+                    _models.value = fetched.models
+                    _modelsFromApi.value = true
+                    if (_form.value.modelName.isBlank()) {
+                        fetched.models.firstOrNull()?.let { selectModel(it) }
+                    }
+                },
+                onFailure = { e ->
+                    _modelsError.value = e.message ?: "拉取失败"
+                    _models.value = ProviderCatalog.builtinModels(
+                        ProviderId.fromKey(_form.value.providerId)
+                    )
+                }
+            )
+        }
+    }
+
+    fun consumeModelsError() {
+        _modelsError.value = null
     }
 
     /** 保存表单:有 id 则更新,否则新建并设为生效 */
     fun save() {
         viewModelScope.launch {
             val f = _form.value
+            val providerLabel = ProviderId.fromKey(f.providerId)
+                .let { if (it == ProviderId.CUSTOM) "自定义" else it.label }
+            val autoName = listOf(providerLabel, f.modelName)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
+                .ifBlank { "配置 ${configs.value.size + 1}" }
             val config = f.copy(
                 id = f.id.ifBlank { UUID.randomUUID().toString() },
-                name = f.name.ifBlank { f.modelName.ifBlank { "配置 ${configs.value.size + 1}" } }
+                name = f.name.ifBlank { autoName }
             )
             settingsRepository.saveConfig(config)
             _form.value = config
@@ -107,52 +223,43 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { settingsRepository.setActive(id) }
     }
 
-    /** 测试连接:非流式发送"你好",验证 URL/密钥/模型可用性 */
+    /** 测试连接:先取模型列表,再按需退回最小对话请求,结果按类型回显 */
     fun testConnection() {
         if (_testing.value) return
         viewModelScope.launch {
             val config = _form.value
             if (!config.isComplete) {
-                _testResult.value = false to "请先填写接口 URL、API Key、模型名称"
+                _testOutcome.value = TestOutcome(
+                    false, TestKind.INVALID, "请先填写接口 URL、API Key 和模型名称"
+                )
                 return@launch
             }
             _testing.value = true
-            val result = apiClient.chatOnce(
-                config.copy(maxTokens = 16),
-                listOf(ChatMessage("user", "你好"))
-            )
+            val outcome = providerApiClient.testConnection(config)
             _testing.value = false
-            _testResult.value = result.fold(
-                onSuccess = { true to "连接成功:\n${it.content.take(120)}" },
-                onFailure = { false to "连接失败:\n${it.message}" }
-            )
+            if (outcome.ok && outcome.models.isNotEmpty()) {
+                _models.value = outcome.models
+                _modelsFromApi.value = true
+            }
+            _testOutcome.value = outcome
         }
-    }
-
-    fun consumeTestResult() {
-        _testResult.value = null
     }
 
     // ---------- 备份导入导出 ----------
 
-    /** 待启动的分享 Intent(导出配置) */
     private val _exportIntent = MutableStateFlow<Intent?>(null)
     val exportIntent: StateFlow<Intent?> = _exportIntent.asStateFlow()
 
-    /** (成功, 消息) 的备份操作结果 */
     private val _backupResult = MutableStateFlow<Pair<Boolean, String>?>(null)
     val backupResult: StateFlow<Pair<Boolean, String>?> = _backupResult.asStateFlow()
 
-    /** 备份目录:导出文件含明文 API Key,必须用完尽快清理 */
     private fun backupDir(app: Application) = File(app.cacheDir, "backup")
 
-    /** 清掉历史备份文件(上次导出残留、或用户在分享面板直接取消的情况) */
     private fun clearBackupCache(app: Application) {
         runCatching { backupDir(app).listFiles()?.forEach { it.delete() } }
     }
 
     init {
-        // 进入设置页先清一次:上次导出的明文密钥不应跨会话留在磁盘上
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) { clearBackupCache(app) }
     }
@@ -162,7 +269,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val app = getApplication<Application>()
             val file = withContext(Dispatchers.IO) {
                 runCatching {
-                    // 文件名带时间戳:固定路径会让曾被授权的应用在授权存续期内反复读到新备份
                     val dir = backupDir(app)
                     clearBackupCache(app)
                     dir.mkdirs()

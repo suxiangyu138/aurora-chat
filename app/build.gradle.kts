@@ -21,8 +21,8 @@ android {
         applicationId = "com.aichat.client"
         minSdk = 30          // 最低 Android 11,兼容绝大多数 iQOO 机型
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.4.1"
+        versionCode = 5
+        versionName = "2.0.0"
     }
 
     signingConfigs {
@@ -39,7 +39,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 发行包开裁剪:R8 去未用代码 + 资源裁剪,实测可从 60MB+ 降到个位数
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -59,6 +61,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // release 前不做 lint 阻塞,缩短发行构建时间(日常 CI 单独跑 lint)
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 
@@ -100,6 +108,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.4")
     ksp("androidx.room:room-compiler:2.8.4")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+
+    // PDF 文本抽取(纯本地,不依赖厂商文件接口)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

@@ -30,8 +30,24 @@
     background: linear-gradient(135deg, #0D9488, #6366F1, #C026D3);
   }
   .bubble {
-    max-width: 72%; border-radius: 16px; padding: 8px 12px;
+    max-width: 88%; border-radius: 16px; padding: 8px 12px;
     word-break: break-word; overflow-wrap: anywhere;
+  }
+  .mermaid-diagram {
+    margin: 8px 0; padding: 8px; border-radius: 10px;
+    background: rgba(125,125,135,0.08); overflow-x: auto;
+    text-align: center;
+  }
+  .mermaid-diagram svg { max-width: 100%; height: auto; }
+  .mermaid-error { font-size: 11px; opacity: 0.65; margin: 4px 0 8px; }
+  .file-chip {
+    display: inline-block; margin-bottom: 6px; padding: 4px 10px;
+    border-radius: 10px; font-size: 12px;
+    background: rgba(125,125,135,0.16);
+  }
+  .usage-line {
+    margin-top: 6px; font-size: 10.5px; line-height: 1.4;
+    opacity: 0.6; letter-spacing: 0.2px;
   }
   .msg-menu {
     border: none; background: transparent; color: inherit;
@@ -63,19 +79,31 @@
   }
   .content pre {
     position: relative;
-    margin: 0.5em 0; padding: 10px 12px;
+    margin: 0.5em 0; padding: 34px 10px 8px;
     background: rgba(128, 128, 128, 0.14);
     border-radius: 8px;
     overflow-x: auto;
+    font-size: 0.8em; line-height: 1.45;
   }
-  .content pre code { background: transparent; padding: 0; }
+  .content pre code { background: transparent; padding: 0; font-size: 1em; }
+  .code-actions {
+    position: absolute; top: 6px; right: 6px; z-index: 2;
+    display: flex; gap: 6px;
+  }
   .code-copy {
-    position: absolute; top: 6px; right: 6px;
     font-size: 11px; line-height: 1.4; padding: 2px 10px;
     border-radius: 4px; border: 1px solid rgba(128, 128, 128, 0.5);
     background: rgba(128, 128, 128, 0.2); color: inherit; cursor: pointer;
   }
-  .content table { border-collapse: collapse; margin: 0.5em 0; display: block; overflow-x: auto; max-width: 100%; }
+  .content table {
+    border-collapse: collapse; display: table;
+    width: max-content; min-width: 100%;
+  }
+  .table-scroll {
+    overflow-x: auto; max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    margin: 0.5em 0;
+  }
   .content th, .content td { border: 1px solid rgba(128, 128, 128, 0.45); padding: 4px 10px; }
   .content th { background: rgba(128, 128, 128, 0.15); }
   .content hr { border: none; border-top: 1px solid rgba(128, 128, 128, 0.4); margin: 0.8em 0; }
@@ -83,6 +111,80 @@
   .content a { text-decoration: none; }
   .katex { font-size: 1.06em; }
   .katex-display { margin: 0.5em 0; }
+
+  /* ---------- 代码全屏(默认亮色,深色主题下自动切换) ---------- */
+  .full-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #fafafa; color: #1c1b1f;
+    display: flex; flex-direction: column;
+  }
+  body.dark .full-overlay { background: #141414; color: #e6e6e6; }
+  .full-head {
+    display: flex; justify-content: flex-end; gap: 10px;
+    padding: 12px 14px; flex: none;
+  }
+  .full-head button {
+    font-size: 13px; padding: 5px 14px; border-radius: 8px;
+    border: 1px solid rgba(128,128,128,0.45);
+    background: rgba(128,128,128,0.12); color: inherit;
+  }
+  .full-code {
+    flex: 1; margin: 0; padding: 0 14px 24px;
+    overflow: auto; white-space: pre;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px; line-height: 1.5;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ---------- 表格全屏 ---------- */
+  .table-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #fafafa; color: #1c1b1f;
+    display: flex; flex-direction: column;
+  }
+  body.dark .table-overlay { background: #141414; color: #e6e6e6; }
+  .table-overlay-scroll {
+    flex: 1; overflow: auto; padding: 0 12px 24px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-overlay-scroll table { border-collapse: collapse; width: max-content; }
+  .table-overlay-scroll th, .table-overlay-scroll td {
+    border: 1px solid rgba(128,128,128,0.45); padding: 6px 10px;
+    white-space: nowrap;
+  }
+  .table-full-btn {
+    display: block; margin: 0 0 4px auto; font-size: 11px;
+    padding: 2px 10px; border-radius: 6px;
+    border: 1px solid rgba(128,128,128,0.45);
+    background: rgba(128,128,128,0.12); color: inherit;
+  }
+
+  /* ---------- 气泡底部操作 ---------- */
+  .msg-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+  }
+  .msg-actions button {
+    font-size: 11.5px; padding: 4px 10px; border-radius: 8px;
+    border: 1px solid rgba(128,128,128,0.45);
+    background: rgba(128,128,128,0.10); color: inherit;
+  }
+
+  /* ---------- 图表放大层 ---------- */
+  .zoom-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; touch-action: none;
+  }
+  .zoom-content { transition: transform 0.04s linear; max-width: 96vw; max-height: 92vh; }
+  .zoom-content svg { max-width: 96vw; max-height: 92vh; height: auto; }
+  .zoom-close {
+    position: fixed; top: 18px; right: 18px; z-index: 10000;
+    width: 36px; height: 36px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.18); color: #fff; font-size: 18px;
+  }
+  .zoom-tip { position: fixed; bottom: 24px; left: 0; right: 0; text-align: center;
+    color: rgba(255,255,255,0.6); font-size: 12px; z-index: 10000; }
 
   /* ---------- 图片 ---------- */
   img.msg-image { max-width: 100%; border-radius: 10px; margin-top: 6px; display: block; }
@@ -137,7 +239,9 @@
 </div>
 <script src="markdown-it.min.js"></script>
 <script src="katex.min.js"></script>
+<script src="mhchem.min.js"></script>
 <script src="highlight.min.js"></script>
+<script src="mermaid.min.js"></script>
 <script src="chat.js"></script>
 </body>
 </html>

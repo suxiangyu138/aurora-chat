@@ -15,12 +15,15 @@ class SessionRepository(private val database: AppDatabase) {
     fun observeMessages(sessionId: Long): Flow<List<MessageEntity>> =
         database.messageDao().observeBySession(sessionId)
 
-    suspend fun createSession(title: String = "新会话"): Long {
+    suspend fun createSession(title: String = "新会话", ephemeral: Boolean = false): Long {
         val now = System.currentTimeMillis()
         return database.sessionDao().insert(
-            SessionEntity(title = title, createdAt = now, updatedAt = now)
+            SessionEntity(title = title, createdAt = now, updatedAt = now, ephemeral = ephemeral)
         )
     }
+
+    /** 启动兜底:清理所有匿名会话 */
+    suspend fun clearEphemeralSessions() = database.sessionDao().deleteAllEphemeral()
 
     suspend fun renameSession(id: Long, title: String) = database.sessionDao().rename(id, title)
 

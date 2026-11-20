@@ -2,6 +2,7 @@ package com.aichat.client.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -37,6 +38,8 @@ class SettingsRepository(private val context: Context) {
     private val KEY_ACTIVE_ID = stringPreferencesKey("active_config_id")
     private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
     private val KEY_ACCENT = intPreferencesKey("accent_color")
+    private val KEY_PROFILE_ENABLED = booleanPreferencesKey("profile_enabled")
+    private val KEY_PROFILE_TEXT = stringPreferencesKey("profile_text")
 
     // ---------- 主题设置 ----------
 
@@ -67,6 +70,31 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs -> prefs[KEY_ACCENT] = argb }
     }
 
+    // ---------- 个性化画像 ----------
+
+    /** 是否把个人画像注入每一轮对话 */
+    val profileEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_PROFILE_ENABLED] ?: false
+    }
+
+    /** 用户背景与输出偏好(纯文本,用户自己写) */
+    val profileText: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_PROFILE_TEXT].orEmpty()
+    }
+
+    suspend fun setProfileEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_PROFILE_ENABLED] = enabled }
+    }
+
+    suspend fun setProfileText(text: String) {
+        context.dataStore.edit { prefs -> prefs[KEY_PROFILE_TEXT] = text }
+    }
+
+    suspend fun getProfile(): Pair<Boolean, String> {
+        val prefs = context.dataStore.data.first()
+        return (prefs[KEY_PROFILE_ENABLED] ?: false) to prefs[KEY_PROFILE_TEXT].orEmpty()
+    }
+
     // ---------- 解析(手写反序列化:老版本保存的数据缺新字段时取默认值) ----------
     // decryptKeys=false 返回存储原样(内部改写时用,避免密文被明文回写)
     // decryptKeys=true  返回可用配置(对外流)
@@ -84,15 +112,18 @@ class SettingsRepository(private val context: Context) {
         val storedKey = o.str("apiKey") ?: ""
         return ModelConfig(
             id = o.str("id").orEmpty(),
-            name = o.str("name") ?: "默认配置",
+            name = o.str("name") ?: "",
             baseUrl = o.str("baseUrl") ?: "",
             apiKey = if (decryptKeys) decryptKey(storedKey) else storedKey,
             modelName = o.str("modelName") ?: "",
+            providerId = o.str("providerId") ?: "custom",
             temperature = o.num("temperature") ?: 0.7f,
             topP = o.num("topP") ?: 1.0f,
             maxTokens = o.int("maxTokens") ?: 2048,
             timeoutSeconds = o.int("timeoutSeconds") ?: 60,
-            contextRounds = o.int("contextRounds") ?: 10,
+            contextRounds = o.int("contextRounds") ?: 0,
+            thinkingEnabled = o.bool("thinkingEnabled") ?: false,
+            webSearchEnabled = o.bool("webSearchEnabled") ?: true,
             streamEnabled = o.bool("streamEnabled") ?: true,
             customBody = o.str("customBody") ?: ""
         ).sanitized()

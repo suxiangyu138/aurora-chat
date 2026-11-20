@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,7 +48,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,7 +85,7 @@ private val AuroraBrush = Brush.linearGradient(
 /** 关于页:品牌头图 + 开发者信息 + iQOO 使用引导 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(onBack: () -> Unit, onOpenTutorial: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
@@ -219,6 +219,39 @@ fun AboutScreen(onBack: () -> Unit) {
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+
+            // 新手教程入口:放在作者信息下方,一眼能看到
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenTutorial),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("使用教程", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "从申请 API Key 到匿名会话,小白也能十分钟上手",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
 
             SectionTitle("iQOO 后台保活设置")
@@ -261,15 +294,14 @@ fun AboutScreen(onBack: () -> Unit) {
 }
 
 /**
- * 应用图标:自适应图标背景层现在是整张位图,与桌面图标同源 ——
+ * 应用图标:背景层是完整图标位图(108dp 自适应图标的背景),这里 1:1 展示完整构图,
+ * 不再放大 1.5 倍 —— 新图标的美术稿本身就是完整方形,放大会切掉气泡边缘。
  * 不要用 drawable/ic_launcher(那是通知栏用的 24dp 单色小图标)。
- * 整层放大 1.5 倍是还原 108→72 的裁切比例:桌面只显示中心 72x72 区域,
- * 不放大则显示范围偏大,和桌面图标不是同一个构图。
  */
 @Composable
 private fun AppIcon(size: Dp) {
     Surface(shape = RoundedCornerShape(size / 4), shadowElevation = 6.dp) {
-        Box(Modifier.size(size).scale(1.5f)) {
+        Box(Modifier.size(size)) {
             Image(
                 painter = painterResource(R.drawable.ic_launcher_background),
                 contentDescription = "应用图标",

@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface SessionDao {
 
-    @Query("SELECT * FROM sessions ORDER BY updatedAt DESC")
+    /** 首页列表:匿名会话永不出现 */
+    @Query("SELECT * FROM sessions WHERE ephemeral = 0 ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<SessionEntity>>
 
     @Query("SELECT * FROM sessions WHERE id = :id")
@@ -29,6 +30,10 @@ interface SessionDao {
 
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** 清理所有匿名会话(启动时兜底:上次异常退出没来得及删) */
+    @Query("DELETE FROM sessions WHERE ephemeral = 1")
+    suspend fun deleteAllEphemeral()
 }
 
 @Dao
@@ -36,6 +41,10 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY createdAt ASC")
     fun observeBySession(sessionId: Long): Flow<List<MessageEntity>>
+
+    /** 全部消息(按时间正序),上下文不限轮数时使用 */
+    @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
+    suspend fun getAll(sessionId: Long): List<MessageEntity>
 
     /** 最近 N 条(按时间倒序),用于组装上下文 */
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY createdAt DESC LIMIT :limit")
@@ -50,6 +59,10 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE sessionId = :sessionId")
     suspend fun count(sessionId: Long): Int
+
+    /** 整段会话的用量记录(按时间正序),用于统计累计 token 与花费 */
+    @Query("SELECT usageJson FROM messages WHERE sessionId = :sessionId AND usageJson IS NOT NULL ORDER BY createdAt ASC, id ASC")
+    suspend fun usageOfSession(sessionId: Long): List<String>
 
     @Insert
     suspend fun insert(message: MessageEntity): Long

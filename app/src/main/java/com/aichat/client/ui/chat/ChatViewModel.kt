@@ -9,10 +9,20 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.aichat.client.ChatApplication
 import com.aichat.client.data.local.MessageEntity
 import com.aichat.client.data.local.SessionEntity
+import com.aichat.client.data.remote.ChatFile
 import com.aichat.client.data.remote.ChatImage
+import com.aichat.client.data.remote.FileExtractor
+import com.aichat.client.data.remote.ImageUtils
+import com.aichat.client.data.remote.TokenUsage
+import com.aichat.client.data.remote.provider.ProviderCatalog
+import com.aichat.client.data.remote.provider.ProviderId
 import com.aichat.client.data.settings.ModelConfig
+import com.aichat.client.data.settings.Pricing
 import com.aichat.client.service.ChatKeepAliveService
+import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,6 +41,146 @@ class ChatViewModel(
 
     private val chatRepository = (application as ChatApplication).chatRepository
     private val sessionRepository = (application as ChatApplication).sessionRepository
+    private val settingsRepository = (application as ChatApplication).settingsRepository
+    private val providerApiClient = (application as ChatApplication).providerApiClient
+
+    /** 已保存的全部模型配置(输入区切换用) */
+    val configs: StateFlow<List<ModelConfig>> = settingsRepository.allConfigs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 当前生效配置 */
+    val activeConfig: StateFlow<ModelConfig?> = settingsRepository.activeConfig
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** 切换模型配置:只影响后续发送的请求,已入库的历史消息不改写 */
+    fun switchModel(configId: String) {
+        viewModelScope.launch { settingsRepository.setActive(configId) }
+    }
+
+    /** 余额胶囊:仅对提供 Key 级余额接口的厂商显示 */
+    data class BalanceUi(val text: String, val loading: Boolean = false)
+    private val _balance = MutableStateFlow<BalanceUi?>(null)
+    val balance: StateFlow<BalanceUi?> = _balance.asStateFlow()
+
+    fun refreshBalance() {
+        val config = activeConfig.value ?: run {
+            _balance.value = null
+            return
+        }
+        if (!providerApiClient.supportsBalance(ProviderId.fromKey(config.providerId))) {
+            _balance.value = null
+            return
+        }
+        _balance.value = BalanceUi("余额查询中", loading = true)
+        viewModelScope.launch {
+            providerApiClient.fetchBalance(config).fold(
+                onSuccess = { b ->
+                    val symbol = if (b.currency == "USD") "$" else "¥"
+                    val text = "余额 " + symbol + String.format("%.2f", b.amount) +
+                        if (b.note.isNotBlank()) " · ${b.note}" else ""
+                    _balance.value = BalanceUi(text)
+                },
+                onFailure = { e ->
+                    _balance.value = BalanceUi("余额:${e.message ?: "查询失败"}")
+                }
+            )
+        }
+    }
+
+    /** 整段会话的累计值与当前上下文占用(顶栏展示) */
+    data class SessionStats(
+        val totalTokens: Int,
+        val totalCost: Double,
+        val costKnown: Boolean,
+        val contextUsed: Int,
+        val contextWindow: Int?
+    )
+
+    /** 消息表变化时重算累计用量(只读 usageJson,不加载消息正文) */
+    val stats: StateFlow<SessionStats?> by lazy {
+        messages
+            .map { loadStats() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
+
+    private suspend fun loadStats(): SessionStats {
+        val entries = chatRepository.sessionUsage(sessionId)
+        var prompt = 0
+        var completion = 0
+        var cost = 0.0
+        var costKnown = false
+        var lastUsed = 0
+        for (raw in entries) {
+            val o = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: continue
+            val p = o.optInt("prompt")
+            val c = o.optInt("completion")
+            prompt += p
+            completion += c
+            lastUsed = p + c
+            if (o.has("cost")) {
+                cost += o.optDouble("cost", 0.0)
+                costKnown = true
+            }
+        }
+        val config = activeConfig.value
+        val window = config?.let {
+            ProviderCatalog.findModel(ProviderId.fromKey(it.providerId), it.modelName)?.contextWindow
+        }
+        return SessionStats(
+            totalTokens = prompt + completion,
+            totalCost = cost,
+            costKnown = costKnown,
+            contextUsed = lastUsed,
+            contextWindow = window
+        )
+    }
+
+    /** 活跃配置快照:入库时按它计算费用 */
+    private var roundConfig: ModelConfig? = null
+
+    private fun buildUsageJson(usage: TokenUsage, config: ModelConfig?): String {
+        val cost = config?.let {
+            Pricing.costCny(
+                it.modelName, usage.promptTokens, usage.cachedTokens, usage.completionTokens
+            )
+        }
+        return JsonObject().apply {
+            addProperty("prompt", usage.promptTokens)
+            addProperty("completion", usage.completionTokens)
+            addProperty("cached", usage.cachedTokens)
+            addProperty("reasoning", usage.reasoningTokens)
+            addProperty("total", usage.totalTokens)
+            addProperty("model", config?.modelName.orEmpty())
+            if (cost != null) addProperty("cost", cost)
+        }.toString()
+    }
+
+    private var pendingUsage: TokenUsage? = null
+
+    private fun beginRound(config: ModelConfig? = null) {
+        pendingUsage = null
+        roundConfig = config ?: activeConfig.value
+    }
+
+    private fun finishRound() {
+        refreshBalance()
+    }
+
+    /** 深度思考开关:默认关闭,按配置持久化,只影响后续请求 */
+    fun setThinkingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val c = chatRepository.getActiveConfig() ?: return@launch
+            settingsRepository.saveConfig(c.copy(thinkingEnabled = enabled))
+        }
+    }
+
+    /** 联网搜索开关:默认开启 */
+    fun setWebSearchEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val c = chatRepository.getActiveConfig() ?: return@launch
+            settingsRepository.saveConfig(c.copy(webSearchEnabled = enabled))
+        }
+    }
 
     val session: StateFlow<SessionEntity?> = sessionRepository.observeSession(sessionId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -52,6 +202,7 @@ class ChatViewModel(
     val earlierAdded: StateFlow<Int> = _earlierAdded.asStateFlow()
 
     init {
+        refreshBalance()
         viewModelScope.launch {
             val total = chatRepository.messageCount(sessionId)
             _hasMore.value = total > PAGE_SIZE
@@ -81,22 +232,65 @@ class ChatViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    /** 待发送的图片(多模态输入) */
-    private val _pendingImage = MutableStateFlow<ChatImage?>(null)
-    val pendingImage: StateFlow<ChatImage?> = _pendingImage.asStateFlow()
+    /** 待发送的图片(多选,最多 30 张) */
+    private val _pendingImages = MutableStateFlow<List<ChatImage>>(emptyList())
+    val pendingImages: StateFlow<List<ChatImage>> = _pendingImages.asStateFlow()
+
+    /** 待发送的文档(多选,最多 30 个) */
+    private val _pendingFiles = MutableStateFlow<List<ChatFile>>(emptyList())
+    val pendingFiles: StateFlow<List<ChatFile>> = _pendingFiles.asStateFlow()
+
+    /** 多选图片:解码压缩放 IO 线程,避免一次选 30 张时卡 UI */
+    fun addImagesFromUris(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val images = withContext(Dispatchers.IO) {
+                uris.take(MAX_ATTACHMENTS).mapNotNull {
+                    ImageUtils.uriToChatImage(getApplication(), it)
+                }
+            }
+            addImages(images)
+        }
+    }
+
+    fun addImages(images: List<ChatImage>) {
+        if (images.isEmpty()) return
+        _pendingImages.value = (_pendingImages.value + images).take(MAX_ATTACHMENTS)
+    }
+
+    fun removeImage(index: Int) {
+        _pendingImages.value = _pendingImages.value.filterIndexed { i, _ -> i != index }
+    }
+
+    /** 逐个解析文档;单个失败不打断其余 */
+    fun attachFiles(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val added = mutableListOf<ChatFile>()
+            var firstError: String? = null
+            withContext(Dispatchers.IO) {
+                for (uri in uris.take(MAX_ATTACHMENTS)) {
+                    FileExtractor.extract(getApplication(), uri).fold(
+                        onSuccess = { added += it },
+                        onFailure = { if (firstError == null) firstError = it.message }
+                    )
+                }
+            }
+            if (added.isNotEmpty()) {
+                _pendingFiles.value = (_pendingFiles.value + added).take(MAX_ATTACHMENTS)
+            }
+            firstError?.let { _error.value = it }
+        }
+    }
+
+    fun removeFile(index: Int) {
+        _pendingFiles.value = _pendingFiles.value.filterIndexed { i, _ -> i != index }
+    }
 
     private var eventSource: EventSource? = null
     private var retryJob: Job? = null
     private var streamAttempt = 0
     private var userStopped = false
-
-    fun attachImage(image: ChatImage) {
-        _pendingImage.value = image
-    }
-
-    fun removeImage() {
-        _pendingImage.value = null
-    }
 
     // ---------- 输入框状态(草稿保留:切页不丢失) ----------
 
@@ -111,8 +305,15 @@ class ChatViewModel(
     }
 
     fun send() {
-        val text = _input.value.trim()
-        if (text.isEmpty() && _pendingImage.value == null) return
+        val typed = _input.value.trim()
+        val text = typed.ifEmpty {
+            when {
+                _pendingFiles.value.isNotEmpty() -> "请阅读附件并总结要点。"
+                _pendingImages.value.isNotEmpty() -> "请描述这些图片。"
+                else -> ""
+            }
+        }
+        if (text.isEmpty()) return
         if (_streamingText.value != null) return
         _input.value = ""
         app.chatDrafts.remove(sessionId)
@@ -122,12 +323,15 @@ class ChatViewModel(
                 _error.value = "请先在设置页填写接口 URL、API Key 和模型名称"
                 return@launch
             }
-            val image = _pendingImage.value
-            _pendingImage.value = null
+            val images = _pendingImages.value
+            val files = _pendingFiles.value
+            _pendingImages.value = emptyList()
+            _pendingFiles.value = emptyList()
+            beginRound(config)
             if (config.streamEnabled) {
-                startStreaming(config, text, image)
+                startStreaming(config, text, images, files)
             } else {
-                startNonStream(config, text, image)
+                startNonStream(config, text, images, files)
             }
         }
     }
@@ -142,8 +346,9 @@ class ChatViewModel(
             val partial = _streamingText.value.orEmpty()
             val partialReasoning = _streamingReasoning.value.orEmpty()
             if (partial.isNotBlank() || partialReasoning.isNotBlank()) {
+                val usageJson = pendingUsage?.let { buildUsageJson(it, roundConfig) }
                 chatRepository.saveAssistantMessage(
-                    sessionId, partial, partialReasoning.ifBlank { null }
+                    sessionId, partial, partialReasoning.ifBlank { null }, usageJson
                 )
             }
             _streamingText.value = null
@@ -171,9 +376,9 @@ class ChatViewModel(
             }
             chatRepository.editUserMessage(sessionId, message.id, text)
             if (config.streamEnabled) {
-                startStreaming(config, text, null)
+                startStreaming(config, text, emptyList(), emptyList())
             } else {
-                startNonStream(config, text, null)
+                startNonStream(config, text, emptyList(), emptyList())
             }
         }
     }
@@ -188,6 +393,7 @@ class ChatViewModel(
                 return@launch
             }
             val app = getApplication<Application>()
+            beginRound(config)
             _streamingText.value = ""
             _streamingReasoning.value = ""
             ChatKeepAliveService.start(app)
@@ -201,6 +407,7 @@ class ChatViewModel(
                 onReasoning = { piece ->
                     _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
                 },
+                onUsage = { usage -> pendingUsage = usage },
                 onComplete = { full, reasoning -> onStreamDone(app, full, reasoning) },
                 onInterrupted = { full, reasoning, msg ->
                     onStreamInterrupted(app, full, reasoning, msg)
@@ -219,7 +426,12 @@ class ChatViewModel(
 
     // ---------- 流式/非流式执行 ----------
 
-    private suspend fun startStreaming(config: ModelConfig, text: String, image: ChatImage?) {
+    private suspend fun startStreaming(
+        config: ModelConfig,
+        text: String,
+        images: List<ChatImage>,
+        files: List<ChatFile>
+    ) {
         val app = getApplication<Application>()
         _streamingText.value = ""
         _streamingReasoning.value = ""
@@ -229,13 +441,15 @@ class ChatViewModel(
             sessionId = sessionId,
             config = config,
             question = text,
-            image = image,
+            images = images,
+            files = files,
             onDelta = { delta ->
                 _streamingText.value = (_streamingText.value ?: "") + delta
             },
             onReasoning = { piece ->
                 _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
             },
+            onUsage = { usage -> pendingUsage = usage },
             onComplete = { full, reasoning -> onStreamDone(app, full, reasoning) },
             onInterrupted = { full, reasoning, msg ->
                 onStreamInterrupted(app, full, reasoning, msg)
@@ -245,13 +459,18 @@ class ChatViewModel(
     }
 
     private fun onStreamDone(app: Application, full: String, reasoning: String) {
+        finishRound()
+        // 先收掉流式行再入库:反过来的话正式气泡与流式行会短暂并存,出现"两个回答"
+        _streamingText.value = null
+        _streamingReasoning.value = null
         viewModelScope.launch {
             streamAttempt = 0
             if (full.isNotBlank() || reasoning.isNotBlank()) {
-                chatRepository.saveAssistantMessage(sessionId, full, reasoning.ifBlank { null })
+                val usageJson = pendingUsage?.let { buildUsageJson(it, roundConfig) }
+                chatRepository.saveAssistantMessage(
+                    sessionId, full, reasoning.ifBlank { null }, usageJson
+                )
             }
-            _streamingText.value = null
-            _streamingReasoning.value = null
             ChatKeepAliveService.stop(app)
         }
     }
@@ -261,7 +480,10 @@ class ChatViewModel(
         viewModelScope.launch {
             streamAttempt = 0
             if (full.isNotBlank() || reasoning.isNotBlank()) {
-                chatRepository.saveAssistantMessage(sessionId, full, reasoning.ifBlank { null })
+                val usageJson = pendingUsage?.let { buildUsageJson(it, roundConfig) }
+                chatRepository.saveAssistantMessage(
+                    sessionId, full, reasoning.ifBlank { null }, usageJson
+                )
             }
             _streamingText.value = null
             _streamingReasoning.value = null
@@ -306,6 +528,7 @@ class ChatViewModel(
             onReasoning = { piece ->
                 _streamingReasoning.value = (_streamingReasoning.value ?: "") + piece
             },
+            onUsage = { usage -> pendingUsage = usage },
             onComplete = { full, reasoning ->
                 onStreamDone(getApplication(), full, reasoning)
             },
@@ -318,16 +541,25 @@ class ChatViewModel(
         )
     }
 
-    private suspend fun startNonStream(config: ModelConfig, text: String, image: ChatImage?) {
+    private suspend fun startNonStream(
+        config: ModelConfig,
+        text: String,
+        images: List<ChatImage>,
+        files: List<ChatFile>
+    ) {
         val app = getApplication<Application>()
         _streamingText.value = ""   // 空串表示等待中(呼吸灯)
         ChatKeepAliveService.start(app)
-        val result = chatRepository.sendMessageOnce(sessionId, config, text, image)
+        beginRound()
+        val result = chatRepository.sendMessageOnce(sessionId, config, text, images, files)
         result.fold(
             onSuccess = { chatResult ->
+                chatResult.usage?.let { pendingUsage = it }
+                finishRound()
                 if (chatResult.content.isNotBlank() || !chatResult.reasoning.isNullOrBlank()) {
+                    val usageJson = chatResult.usage?.let { buildUsageJson(it, roundConfig) }
                     chatRepository.saveAssistantMessage(
-                        sessionId, chatResult.content, chatResult.reasoning
+                        sessionId, chatResult.content, chatResult.reasoning, usageJson
                     )
                 }
             },
@@ -352,11 +584,18 @@ class ChatViewModel(
         retryJob?.cancel()
         eventSource?.cancel()
         ChatKeepAliveService.stop(getApplication())
+        // 匿名会话:离开页面立刻整段删除,绝不保留
+        if (session.value?.ephemeral == true) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                runCatching { sessionRepository.deleteSession(sessionId) }
+            }
+        }
         super.onCleared()
     }
 
     companion object {
         private const val PAGE_SIZE = 30
+        private const val MAX_ATTACHMENTS = 30
         private const val MAX_RETRIES = 3
 
         fun factory(sessionId: Long): ViewModelProvider.Factory = viewModelFactory {

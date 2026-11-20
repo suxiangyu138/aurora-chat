@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +52,7 @@ fun HomeScreen(
     onOpenSession: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenTutorial: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -62,6 +65,17 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Aurora Chat") },
                 actions = {
+                    IconButton(onClick = {
+                        viewModel.createAnonymousSession { onOpenSession(it) }
+                    }) {
+                        Icon(Icons.Default.VisibilityOff, contentDescription = "匿名会话(退出即删)")
+                    }
+                    IconButton(onClick = onOpenTutorial) {
+                        Icon(
+                            Icons.Default.MenuBook,
+                            contentDescription = "使用教程"
+                        )
+                    }
                     IconButton(onClick = onOpenAbout) {
                         Icon(Icons.Default.Info, contentDescription = "关于与开发者信息")
                     }
