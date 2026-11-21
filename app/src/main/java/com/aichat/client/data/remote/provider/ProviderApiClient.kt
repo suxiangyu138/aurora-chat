@@ -71,6 +71,7 @@ class ProviderApiClient {
                 .url(candidate)
                 .header("Authorization", "Bearer ${config.apiKey}")
                 .header("Accept", "application/json")
+                .header("User-Agent", EndpointResolver.BROWSER_UA)
                 .get()
                 .build()
             try {
@@ -102,13 +103,7 @@ class ProviderApiClient {
     }
 
     /** 依次尝试 base/models、base/v1/models(以及去掉 /v1 的 base/models) */
-    private fun modelEndpoints(base: String): List<String> {
-        val list = linkedSetOf<String>()
-        list += "$base/models"
-        if (!base.endsWith("/v1")) list += "$base/v1/models"
-        if (base.endsWith("/v1")) list += "${base.removeSuffix("/v1")}/models"
-        return list.toList()
-    }
+    private fun modelEndpoints(base: String): List<String> = EndpointResolver.modelsUrls(base)
 
     private fun parseModels(body: String, config: ModelConfig): List<ModelInfo> {
         val root = runCatching { JsonParser.parseString(body) }.getOrNull() ?: return emptyList()
@@ -159,13 +154,13 @@ class ProviderApiClient {
 
     /** 当前厂商是否提供「用 API Key 查余额」的官方接口 */
     fun supportsBalance(providerId: ProviderId): Boolean = when (providerId) {
-        ProviderId.DEEPSEEK, ProviderId.MOONSHOT, ProviderId.OPENROUTER -> true
+        ProviderId.DEEPSEEK, ProviderId.MOONSHOT -> true
         else -> false
     }
 
     /**
      * 查余额。各家只有这三家有公开的 key 级接口:
-     * DeepSeek /user/balance、Kimi /users/me/balance、OpenRouter /credits。
+     * DeepSeek /user/balance、Kimi /users/me/balance。
      * 其余厂商的余额在云平台 AK/SK 的 OpenAPI 里,普通 API Key 查不到,UI 不显示入口。
      */
     suspend fun fetchBalance(config: ModelConfig): Result<Balance> = withContext(Dispatchers.IO) {
@@ -177,13 +172,13 @@ class ProviderApiClient {
         val url = when (provider) {
             ProviderId.DEEPSEEK -> "$base/user/balance"
             ProviderId.MOONSHOT -> "$base/users/me/balance"
-            ProviderId.OPENROUTER -> "$base/credits"
             else -> return@withContext Result.failure(IllegalStateException("不支持"))
         }
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer ${config.apiKey}")
             .header("Accept", "application/json")
+            .header("User-Agent", EndpointResolver.BROWSER_UA)
             .get()
             .build()
         try {
@@ -191,7 +186,7 @@ class ProviderApiClient {
                 val body = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) {
                     val hint = when (resp.code) {
-                        401, 403 -> "鉴权失败或无权限(OpenRouter 余额需要管理密钥)"
+                        401, 403 -> "鉴权失败或无权限"
                         404 -> "该接口不存在,可能不是官方地址"
                         else -> "HTTP ${resp.code}"
                     }
@@ -215,12 +210,6 @@ class ProviderApiClient {
                         val amount = data?.double("available_balance")
                             ?: root.double("available_balance") ?: 0.0
                         Balance(amount, "CNY")
-                    }
-                    ProviderId.OPENROUTER -> {
-                        val data = root.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                        val total = data?.double("total_credits") ?: 0.0
-                        val used = data?.double("total_usage") ?: 0.0
-                        Balance((total - used).coerceAtLeast(0.0), "USD")
                     }
                     else -> Balance(0.0, "CNY")
                 }
@@ -261,9 +250,10 @@ class ProviderApiClient {
 
         // 第二步:最小对话请求,验证模型名与地址是否真的可用
         val request = Request.Builder()
-            .url(config.baseUrl.trim().trimEnd('/') + "/chat/completions")
+            .url(EndpointResolver.chatUrl(config.baseUrl))
             .header("Content-Type", "application/json")
             .header("Authorization", "Bearer ${config.apiKey}")
+            .header("User-Agent", EndpointResolver.BROWSER_UA)
             .post(
                 """{"model":"${config.modelName}","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"stream":false}"""
                     .toRequestBody(jsonMediaType)

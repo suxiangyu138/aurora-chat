@@ -501,7 +501,12 @@ class ChatViewModel(
         if (userStopped) return   // 用户主动停止,stopStreaming 已收尾
         val nothingReceived = _streamingText.value.isNullOrEmpty() &&
             _streamingReasoning.value.isNullOrEmpty()
-        if (nothingReceived && streamAttempt < MAX_RETRIES) {
+        // 429 是调用方超过频率上限,自动重连只会继续撞限流(Kimi 免费额度就是 3 RPM),
+        // 直接停止并让用户等待后手动重试,避免三连重试把额度打光。
+        val rateLimited = msg.contains("429") ||
+            msg.contains("max RPM", ignoreCase = true) ||
+            msg.contains("rate limit", ignoreCase = true)
+        if (nothingReceived && !rateLimited && streamAttempt < MAX_RETRIES) {
             streamAttempt++
             _error.value = "连接中断,自动重连中(${streamAttempt}/$MAX_RETRIES)…"
             retryJob = viewModelScope.launch {
@@ -510,9 +515,12 @@ class ChatViewModel(
             }
         } else {
             viewModelScope.launch {
-                val finalMsg = if (streamAttempt >= MAX_RETRIES && nothingReceived) {
-                    "多次重连失败:$msg"
-                } else msg
+                val finalMsg = when {
+                    rateLimited -> "接口触发频率限制(429):请等待约 60 秒后再手动重试,期间不要连续发送"
+                    streamAttempt >= MAX_RETRIES && nothingReceived -> "多次重连失败:$msg"
+                    else -> msg
+                }
+                streamAttempt = 0
                 // 失败消息持久化,气泡内提供重试按钮
                 chatRepository.saveErrorMessage(sessionId, "回答失败:$finalMsg")
                 _streamingText.value = null

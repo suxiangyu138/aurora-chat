@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](#兼容性)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Version](https://img.shields.io/badge/release-v2.0.1-6366F1)](https://gitee.com/suxiangyu138/aurora-chat/releases)
+[![Version](https://img.shields.io/badge/release-v2.0.2-6366F1)](https://gitee.com/suxiangyu138/aurora-chat/releases)
 [![Backend](https://img.shields.io/badge/服务端-无-0D9488)](#隐私与安全)
 
 [下载安装](#下载安装) · [使用教程](#使用教程) · [从源码构建](#从源码构建) · [隐私与安全](#隐私与安全) · [架构](#架构)
@@ -32,13 +32,13 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 
 | 能力 | 说明 |
 |---|---|
-| 厂商模板 | 内置 DeepSeek、通义千问、智谱 GLM、Kimi、豆包、文心、星火、百川、OpenAI、OpenRouter 模板,模型 ID 按 2026-11-20 官方文档核实 |
+| 厂商模板 | 内置 DeepSeek、通义千问、智谱 GLM、Kimi、MiniMax、小米 MiMo 六个官方模板,模型 ID 于 2026-11-21 逐个实测;中转站统一走「自定义」,地址与 Key 由用户填写 |
 | 中转站 / 自建 | 「自定义兼容接口」模板,填 Base URL 与 Key 后可直接拉取该站全部模型,自动探测 `/models` 与 `/v1/models` |
 | 拉取模型 | 一键从接口读取该 Key 可用的模型,展示上下文窗口与能力;失败自动回退手动填写 |
 | 连接自检 | 先查模型列表,再按需发最小请求;区分鉴权失败、地址错误、模型不存在、限流、超时、服务端错误 |
 | 多套配置 | 多组地址与密钥并存,聊天页胶囊一键切换,配置名称可自定义 |
 | 高级参数 | 温度、top_p、输出上限、超时、请求体模板默认收起,需要时再展开 |
-| 账户余额 | DeepSeek、Kimi、OpenRouter 支持用 API Key 查余额,胶囊实时显示;其余厂商无此接口则不显示 |
+| 账户余额 | DeepSeek、Kimi 支持用 API Key 查余额,胶囊实时显示;其余厂商没有公开的 Key 级余额接口,不显示入口 |
 
 ### 对话体验
 
@@ -78,9 +78,9 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 
 ## 下载安装
 
-前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载 `AuroraChat-v2.0.1.apk`,手机安装(需允许安装未知来源应用)。Gitee 用户可从 [Gitee 发行版](https://gitee.com/suxiangyu138/aurora-chat/releases) 获取同一安装包。
+前往 [Releases](https://github.com/suxiangyu138/aurora-chat/releases) 下载 `AuroraChat-v2.0.2.apk`,手机安装(需允许安装未知来源应用)。Gitee 用户可从 [Gitee 发行版](https://gitee.com/suxiangyu138/aurora-chat/releases) 获取同一安装包。
 
-> v2.0.1 的 release 包约 12MB;debug 包包含调试信息与未裁剪代码,体积约 110MB,仅用于开发。
+> v2.0.2 的 release 包约 12MB;debug 包包含调试信息与未裁剪代码,体积约 110MB,仅用于开发。
 
 ## 使用教程
 
@@ -92,7 +92,7 @@ v2.0.0 起,它不再只是"能聊天的小工具":模型配置、联网搜索、
 2. **首页 `+`** 新建会话(或点带斜线眼睛图标开匿名会话)
 3. 开始对话;需要时切换深度思考、联网搜索、附加文档或图片
 
-> DeepSeek、Kimi、OpenRouter 还支持在输入框上方直接查看账户余额;其余厂商的余额在云平台控制台,API Key 查不到。
+> DeepSeek、Kimi 支持在输入框上方直接查看账户余额;其余厂商的余额在云平台控制台,API Key 查不到。
 
 ## 隐私与安全
 
@@ -188,6 +188,7 @@ cd aurora-chat
 
 - **系统**:Android 11(API 30)及以上;iQOO / OriginOS 全系适配
 - **接口**:任何 OpenAI 兼容的 `POST /chat/completions`,`stream: true` 走 SSE
+- **中转站兼容**:以 `/api` 结尾的地址会自动补成 `/api/v1/chat/completions`;请求统一带浏览器 UA,避免 Cloudflare 403 被误判为超时
 - **模型**:文本模型开箱即用;支持识图的模型可发多图;带 `reasoning_content` 的推理模型自动展示思考
 - **文档**:PDF(文字版)、DOCX、TXT/Markdown/CSV/JSON/代码;扫描版 PDF 无文字层,读不出内容
 
@@ -200,7 +201,7 @@ cd aurora-chat
 多半是历史消息里带了服务端不接受的内容。v2.0.0 已过滤失败气泡与空 assistant 消息,并补齐 DeepSeek 工具场景要求的 `reasoning_content`;若仍失败,错误气泡会显示服务端原文。
 
 **余额显示「查询失败」?**
-只有 DeepSeek、Kimi、OpenRouter 有 API Key 级余额接口;OpenRouter 需要管理密钥。其余厂商只能去云平台控制台看。
+只有 DeepSeek、Kimi 有 API Key 级余额接口;其余厂商只能去云平台控制台看。
 
 **匿名会话真的不保存吗?**
 不写进会话列表,退出页面即删除,启动时再清理一次残留;但如果你主动导出备份,匿名会话不在备份里。

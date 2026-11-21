@@ -2,6 +2,7 @@ package com.aichat.client.data.remote
 
 import android.os.Handler
 import android.os.Looper
+import com.aichat.client.data.remote.provider.EndpointResolver
 import com.aichat.client.data.remote.provider.ProviderCatalog
 import com.aichat.client.data.remote.provider.ProviderId
 import com.aichat.client.data.settings.ModelConfig
@@ -141,9 +142,8 @@ class ChatApiClient {
         if (stream) {
             val provider = ProviderId.fromKey(config.providerId)
             if (provider in setOf(
-                    ProviderId.OPENAI, ProviderId.QWEN, ProviderId.ZHIPU,
-                    ProviderId.VOLCENGINE, ProviderId.QIANFAN, ProviderId.MOONSHOT,
-                    ProviderId.OPENROUTER
+                    ProviderId.QWEN, ProviderId.ZHIPU, ProviderId.MOONSHOT,
+                    ProviderId.MINIMAX, ProviderId.MIMO
                 )
             ) {
                 root.add(
@@ -209,61 +209,6 @@ class ChatApiClient {
                     })
                 }
             }
-            ProviderId.VOLCENGINE -> {
-                root.add("thinking", thinking)
-                if (config.webSearchEnabled) root.add("web_search_options", JsonObject())
-            }
-            ProviderId.QIANFAN -> {
-                root.add("thinking", thinking)
-                if (config.webSearchEnabled) {
-                    root.add("web_search", JsonObject().apply {
-                        addProperty("enable", true)
-                        addProperty("enable_citation", true)
-                    })
-                }
-            }
-            ProviderId.SPARK -> {
-                root.add("thinking", thinking)
-                if (config.webSearchEnabled) {
-                    root.add("tools", JsonArray().apply {
-                        add(JsonObject().apply {
-                            addProperty("type", "web_search")
-                            add("web_search", JsonObject().apply {
-                                addProperty("enable", true)
-                                addProperty("search_mode", "normal")
-                            })
-                        })
-                    })
-                }
-            }
-            ProviderId.BAICHUAN -> {
-                if (config.webSearchEnabled) {
-                    root.add("tools", JsonArray().apply {
-                        add(JsonObject().apply {
-                            addProperty("type", "web_search")
-                            add("web_search", JsonObject().apply {
-                                addProperty("enable", true)
-                                addProperty("search_mode", "performance_first")
-                            })
-                        })
-                    })
-                }
-            }
-            ProviderId.OPENROUTER -> {
-                root.add("reasoning", JsonObject().apply {
-                    addProperty("enabled", config.thinkingEnabled)
-                })
-                if (config.webSearchEnabled) {
-                    root.add("tools", JsonArray().apply {
-                        add(JsonObject().apply { addProperty("type", "openrouter:web_search") })
-                    })
-                }
-            }
-            ProviderId.OPENAI -> {
-                if (config.thinkingEnabled) {
-                    root.addProperty("reasoning_effort", "medium")
-                }
-            }
             else -> Unit
         }
     }
@@ -271,12 +216,13 @@ class ChatApiClient {
     /** 组装请求:自动携带 Authorization(API Key)与 Content-Type */
     private fun buildRequest(config: ModelConfig, body: String, stream: Boolean): Request {
         val builder = Request.Builder()
-            .url(config.baseUrl.trimEnd('/') + "/chat/completions")
+            .url(EndpointResolver.chatUrl(config.baseUrl))
             .header("Content-Type", "application/json")
             .header("Accept", if (stream) "text/event-stream" else "application/json")
             .post(body.toRequestBody(jsonMediaType))
         if (config.apiKey.isNotBlank()) {
             builder.header("Authorization", "Bearer ${config.apiKey}")
+            builder.header("User-Agent", EndpointResolver.BROWSER_UA)
         }
         return builder.build()
     }
