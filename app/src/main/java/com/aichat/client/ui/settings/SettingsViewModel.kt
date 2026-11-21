@@ -116,7 +116,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             if (_form.value.baseUrl.isBlank() && _form.value.apiKey.isBlank()) {
                 settingsRepository.getActiveConfig()?.let { config ->
-                    _form.value = config
+                    _form.value = config.sanitized()
                     refreshModelCandidates()
                 }
             }
@@ -142,7 +142,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadIntoForm(config: ModelConfig) {
-        _form.value = config
+        _form.value = config.sanitized()
         refreshModelCandidates()
     }
 
@@ -176,6 +176,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     /** 从接口拉取该地址下的全部可用模型(厂商官方或中转站均可) */
     fun fetchModels() {
+        _form.value = _form.value.sanitized()
         if (_modelsLoading.value) return
         viewModelScope.launch {
             val config = _form.value
@@ -215,7 +216,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .filter { it.isNotBlank() }
                 .joinToString(" · ")
                 .ifBlank { "配置 ${configs.value.size + 1}" }
-            val config = f.copy(
+            val config = f.sanitized().copy(
                 id = f.id.ifBlank { UUID.randomUUID().toString() },
                 name = f.name.ifBlank { autoName }
             )
@@ -236,7 +237,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun testConnection() {
         if (_testing.value) return
         viewModelScope.launch {
-            val config = _form.value
+            val config = _form.value.sanitized()
             if (!config.isComplete) {
                 _testOutcome.value = TestOutcome(
                     false, TestKind.INVALID, "请先填写接口 URL、API Key 和模型名称"

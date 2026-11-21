@@ -39,3 +39,12 @@ data class ModelConfig(
         contextRounds = contextRounds.coerceIn(0, 1000)
     )
 }
+
+
+/** 去掉落键时带进来的换行/空格:换行会让 OkHttp 的 Authorization 头直接抛异常 */
+fun ModelConfig.sanitized(): ModelConfig = copy(
+    name = name.trim(),
+    baseUrl = baseUrl.trim(),
+    apiKey = apiKey.filterNot { it.isWhitespace() },
+    modelName = modelName.trim()
+)

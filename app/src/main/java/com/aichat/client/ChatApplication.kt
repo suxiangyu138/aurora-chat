@@ -20,6 +20,7 @@ class ChatApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         // PDFBox 需要先加载字体等资源,否则首次解析 PDF 会失败
         PDFBoxResourceLoader.init(applicationContext)
         // 兜底清理匿名会话:进程被系统杀掉时 onCleared 来不及执行

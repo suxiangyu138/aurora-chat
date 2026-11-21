@@ -69,7 +69,7 @@ class ProviderApiClient {
         for (candidate in modelEndpoints(base)) {
             val request = Request.Builder()
                 .url(candidate)
-                .header("Authorization", "Bearer ${config.apiKey}")
+                .header("Authorization", "Bearer ${config.apiKey.filterNot { it.isWhitespace() }}")
                 .header("Accept", "application/json")
                 .header("User-Agent", EndpointResolver.BROWSER_UA)
                 .get()
@@ -176,7 +176,7 @@ class ProviderApiClient {
         }
         val request = Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer ${config.apiKey}")
+            .header("Authorization", "Bearer ${config.apiKey.filterNot { it.isWhitespace() }}")
             .header("Accept", "application/json")
             .header("User-Agent", EndpointResolver.BROWSER_UA)
             .get()
@@ -252,7 +252,7 @@ class ProviderApiClient {
         val request = Request.Builder()
             .url(EndpointResolver.chatUrl(config.baseUrl))
             .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer ${config.apiKey}")
+            .header("Authorization", "Bearer ${config.apiKey.filterNot { it.isWhitespace() }}")
             .header("User-Agent", EndpointResolver.BROWSER_UA)
             .post(
                 """{"model":"${config.modelName}","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"stream":false}"""

@@ -221,7 +221,7 @@ class ChatApiClient {
             .header("Accept", if (stream) "text/event-stream" else "application/json")
             .post(body.toRequestBody(jsonMediaType))
         if (config.apiKey.isNotBlank()) {
-            builder.header("Authorization", "Bearer ${config.apiKey}")
+            builder.header("Authorization", "Bearer ${config.apiKey.filterNot { it.isWhitespace() }}")
             builder.header("User-Agent", EndpointResolver.BROWSER_UA)
         }
         return builder.build()
